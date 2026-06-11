@@ -64,6 +64,44 @@ final class NotificationService {
         }
     }
 
+    /// Fires once per threshold (80% / 100%) per budget per month, checked when the
+    /// app backgrounds. Already-sent alerts are remembered in UserDefaults.
+    @MainActor
+    func checkBudgets(context: ModelContext) async {
+        guard isEnabled,
+              let monthStart = Calendar.current.dateInterval(of: .month, for: .now)?.start else { return }
+        let budgets = (try? context.fetch(FetchDescriptor<Budget>())) ?? []
+        guard !budgets.isEmpty else { return }
+        let spentTx = (try? context.fetch(FetchDescriptor<MoneyTransaction>(
+            predicate: #Predicate { $0.date >= monthStart && $0.amount > 0 }))) ?? []
+        let monthKey = monthStart.formatted(.dateTime.year().month(.twoDigits))
+
+        for budget in budgets {
+            let spent = spentTx
+                .filter { $0.category.lowercased() == budget.category.lowercased() }
+                .reduce(0) { $0 + $1.amount }
+            let fraction = spent / max(budget.monthlyLimit, 1)
+
+            for (threshold, label) in [(1.0, "100"), (0.8, "80")] where fraction >= threshold {
+                let alertKey = "budget_alert_\(budget.category.lowercased())_\(monthKey)_\(label)"
+                guard !UserDefaults.standard.bool(forKey: alertKey) else { continue }
+                UserDefaults.standard.set(true, forKey: alertKey)
+
+                let content = UNMutableNotificationContent()
+                if threshold >= 1 {
+                    content.title = "\(budget.category) budget exceeded"
+                    content.body = "You've spent \(spent.asCurrency()) of your \(budget.monthlyLimit.asCurrency()) monthly limit."
+                } else {
+                    content.title = "\(budget.category) budget at \(Int(fraction * 100))%"
+                    content.body = "\((budget.monthlyLimit - spent).asCurrency()) left for the rest of the month."
+                }
+                content.sound = .default
+                schedule(content, at: Date.now.addingTimeInterval(2), id: alertKey)
+                break // only the highest crossed threshold per check
+            }
+        }
+    }
+
     private func schedule(_ content: UNMutableNotificationContent, at date: Date, id: String) {
         let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
         let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)

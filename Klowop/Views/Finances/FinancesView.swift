@@ -7,7 +7,9 @@ struct FinancesView: View {
     @Query private var accounts: [FinancialAccount]
     @Query(sort: \MoneyTransaction.date, order: .reverse) private var transactions: [MoneyTransaction]
     @Query(filter: #Predicate<Subscription> { $0.isActive }) private var subscriptions: [Subscription]
+    @Query(sort: \Budget.category) private var budgets: [Budget]
     @State private var plaid = PlaidService.shared
+    @State private var showingBudgetEditor = false
     @Environment(\.scenePhase) private var scenePhase
 
     private var netWorth: Double {
@@ -23,6 +25,7 @@ struct FinancesView: View {
                 VStack(spacing: 16) {
                     netWorthCard
                     if !transactions.isEmpty { spendingChartCard }
+                    budgetsCard
                     accountsCard
                     subscriptionsTeaser
                     transactionsCard
@@ -140,6 +143,62 @@ struct FinancesView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .card()
+    }
+
+    // MARK: - Budgets
+
+    /// Spending in the current calendar month for a budget's category.
+    private func monthSpent(for category: String) -> Double {
+        guard let monthStart = Calendar.current.dateInterval(of: .month, for: .now)?.start else { return 0 }
+        return transactions
+            .filter { $0.date >= monthStart && $0.amount > 0 && $0.category.lowercased() == category.lowercased() }
+            .reduce(0) { $0 + $1.amount }
+    }
+
+    private var budgetsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Budgets · this month", systemImage: "gauge.with.needle")
+                    .font(.headline)
+                    .foregroundStyle(.orange)
+                Spacer()
+                Button { showingBudgetEditor = true } label: {
+                    Image(systemName: "plus.circle.fill").foregroundStyle(.orange)
+                }
+            }
+            if budgets.isEmpty {
+                Text("Set monthly limits per category — or just tell the assistant \"set a $300 restaurants budget\".")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(budgets) { budget in
+                let spent = monthSpent(for: budget.category)
+                let fraction = spent / max(budget.monthlyLimit, 1)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(budget.category).font(.subheadline.weight(.medium))
+                        Spacer()
+                        Text("\(spent.asCurrency()) of \(budget.monthlyLimit.asCurrency())")
+                            .font(.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(fraction >= 1 ? .red : .secondary)
+                    }
+                    ProgressView(value: min(1, fraction))
+                        .tint(fraction >= 1 ? .red : fraction >= 0.8 ? .orange : .green)
+                }
+                .contextMenu {
+                    Button(role: .destructive) {
+                        context.delete(budget)
+                        try? context.save()
+                    } label: { Label("Delete budget", systemImage: "trash") }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+        .sheet(isPresented: $showingBudgetEditor) {
+            BudgetEditorView(existingCategories: Array(Set(transactions.map(\.category))).sorted())
+        }
     }
 
     private var accountsCard: some View {

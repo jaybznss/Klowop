@@ -7,7 +7,7 @@ enum AppGroup {
 
     static var schema: Schema {
         Schema([Meal.self, CalendarEvent.self, TodoItem.self, FinancialAccount.self,
-                MoneyTransaction.self, Subscription.self, ChatMessage.self])
+                MoneyTransaction.self, Subscription.self, Budget.self, ChatMessage.self])
     }
 
     static func makeModelContainer() throws -> ModelContainer {
@@ -167,6 +167,17 @@ final class Subscription {
         case "yearly": return amount / 12
         default: return amount
         }
+    }
+}
+
+@Model
+final class Budget {
+    var category: String        // matches MoneyTransaction.category
+    var monthlyLimit: Double
+
+    init(category: String, monthlyLimit: Double) {
+        self.category = category
+        self.monthlyLimit = monthlyLimit
     }
 }
 

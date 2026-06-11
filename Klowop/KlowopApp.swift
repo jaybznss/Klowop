@@ -27,6 +27,8 @@ struct KlowopApp: App {
                 Task { @MainActor in
                     await NotificationService.shared.rescheduleAll(
                         context: container.mainContext)
+                    await NotificationService.shared.checkBudgets(
+                        context: container.mainContext)
                 }
             }
         }

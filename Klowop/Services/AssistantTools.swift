@@ -117,6 +117,19 @@ enum AssistantTools {
                  properties: ["days": ["type": "integer", "description": "How many days back. Default 30."]],
                  required: []),
 
+            tool("set_budget",
+                 "Create or update a monthly spending budget for a category. Use the user's existing transaction categories when possible (get_spending_summary shows them).",
+                 properties: [
+                    "category": str("Spending category, e.g. Food And Drink"),
+                    "monthly_limit": ["type": "number", "description": "Monthly limit in the user's currency"],
+                 ],
+                 required: ["category", "monthly_limit"]),
+
+            tool("get_budget_status",
+                 "Check all budgets: limit, spent so far this month, and remaining. Call this when the user asks how their budgets are doing or whether they can afford something.",
+                 properties: [:],
+                 required: []),
+
             tool("get_health_summary",
                  "Get Apple Health data: today's Apple Watch activity (active calories burned, steps, exercise minutes) and the latest body composition (weight, body fat, lean mass from a smart scale). Call this when the user asks about workouts, calories burned, weight, or body composition.",
                  properties: ["date": str("Day for the activity numbers, ISO 8601. Omit for today.")],
@@ -160,6 +173,8 @@ enum AssistantTools {
             case "cancel_subscription": return try cancelSubscription(input, context)
             case "search_transactions": return try searchTransactions(input, context)
             case "get_spending_summary": return try spendingSummary(input, context)
+            case "set_budget": return try setBudget(input, context)
+            case "get_budget_status": return try budgetStatus(context)
             case "get_health_summary": return await healthSummary(input)
             default: return "Error: unknown tool \(name)"
             }
@@ -340,6 +355,42 @@ enum AssistantTools {
         let total = spent.reduce(0) { $0 + $1.amount }
         let lines = byCategory.map { "- \($0.key): \($0.value.asCurrency())" }.joined(separator: "\n")
         return "Spending last \(days) days — total \(total.asCurrency()):\n\(lines)"
+    }
+
+    @MainActor
+    private static func setBudget(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        guard let category = input["category"] as? String,
+              let limit = input["monthly_limit"] as? Double else {
+            return "Error: category and monthly_limit are required."
+        }
+        let budgets = try context.fetch(FetchDescriptor<Budget>())
+        if let existing = budgets.first(where: { $0.category.lowercased() == category.lowercased() }) {
+            existing.monthlyLimit = limit
+            try context.save()
+            return "Updated the \(existing.category) budget to \(limit.asCurrency())/month."
+        }
+        context.insert(Budget(category: category, monthlyLimit: limit))
+        try context.save()
+        return "Set a \(limit.asCurrency())/month budget for \(category)."
+    }
+
+    @MainActor
+    private static func budgetStatus(_ context: ModelContext) throws -> String {
+        let budgets = try context.fetch(FetchDescriptor<Budget>(sortBy: [SortDescriptor(\.category)]))
+        guard !budgets.isEmpty else { return "No budgets set yet. Offer to create some based on spending." }
+        guard let monthStart = Calendar.current.dateInterval(of: .month, for: .now)?.start else {
+            return "Error: could not compute the current month."
+        }
+        let spentTx = try context.fetch(FetchDescriptor<MoneyTransaction>(
+            predicate: #Predicate { $0.date >= monthStart && $0.amount > 0 }))
+        return budgets.map { budget in
+            let spent = spentTx
+                .filter { $0.category.lowercased() == budget.category.lowercased() }
+                .reduce(0) { $0 + $1.amount }
+            let remaining = budget.monthlyLimit - spent
+            let state = remaining < 0 ? "OVER by \((-remaining).asCurrency())" : "\(remaining.asCurrency()) left"
+            return "- \(budget.category): \(spent.asCurrency()) of \(budget.monthlyLimit.asCurrency()) (\(state))"
+        }.joined(separator: "\n")
     }
 
     @MainActor
