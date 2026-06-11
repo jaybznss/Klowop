@@ -11,7 +11,7 @@ struct RootTabView: View {
             Tab("Agenda", systemImage: "calendar") {
                 AgendaView()
             }
-            Tab("Food", systemImage: "fork.knife") {
+            Tab("Health", systemImage: "heart.fill") {
                 NutritionView()
             }
             Tab("Money", systemImage: "creditcard.fill") {

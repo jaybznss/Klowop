@@ -45,6 +45,9 @@ targets:
         NSHealthUpdateUsageDescription: >-
           Klowop saves the meals you log to Apple Health so your nutrition
           data stays in one place.
+        NSCameraUsageDescription: >-
+          Klowop uses the camera to scan food barcodes so you can log
+          products with exact nutrition data.
         # Replace YOUR_GOOGLE_CLIENT_ID with the reversed Google OAuth client id,
         # e.g. com.googleusercontent.apps.1234567890-abcdef (see SETUP.md step 3)
         CFBundleURLTypes:

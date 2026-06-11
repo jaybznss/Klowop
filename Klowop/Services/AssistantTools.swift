@@ -66,8 +66,13 @@ enum AssistantTools {
                  properties: ["include_done": ["type": "boolean", "description": "Also include completed items"]],
                  required: []),
 
+            tool("search_food_database",
+                 "Search the Open Food Facts nutrition database for real per-100g nutrition data. Call this BEFORE log_meal whenever the user mentions a branded or specific product (e.g. 'a Snickers', 'Chobani yogurt') or when you're unsure of the nutrition — then scale the per-100g values to the portion eaten.",
+                 properties: ["query": str("Food or product name to look up")],
+                 required: ["query"]),
+
             tool("log_meal",
-                 "Log something the user ate or drank. Call this whenever the user mentions eating. Estimate calories and macros yourself if the user doesn't give them.",
+                 "Log something the user ate or drank. Call this whenever the user mentions eating. For branded/specific products, call search_food_database first and scale its data to the portion; otherwise estimate calories and macros yourself.",
                  properties: [
                     "name": str("What was eaten, e.g. 'Chicken caesar salad'"),
                     "meal_type": ["type": "string", "enum": ["breakfast", "lunch", "dinner", "snack"], "description": "Which meal"],
@@ -166,6 +171,7 @@ enum AssistantTools {
             case "add_todo": return try addTodo(input, context)
             case "complete_todo": return try completeTodo(input, context)
             case "list_todos": return try listTodos(input, context)
+            case "search_food_database": return await searchFoodDatabase(input)
             case "log_meal": return try await logMeal(input, context)
             case "get_nutrition_summary": return try nutritionSummary(input, context)
             case "get_finance_overview": return try financeOverview(context)
@@ -277,6 +283,28 @@ enum AssistantTools {
             }.joined(separator: "\n")
             return "\(list):\n\(lines)"
         }.joined(separator: "\n")
+    }
+
+    private static func searchFoodDatabase(_ input: [String: Any]) async -> String {
+        guard let query = input["query"] as? String, !query.isEmpty else {
+            return "Error: query is required."
+        }
+        do {
+            let items = try await FoodDatabaseService.search(query)
+            guard !items.isEmpty else {
+                return "No database matches for '\(query)' — estimate the nutrition yourself."
+            }
+            return items.prefix(5).map { item in
+                var line = "- \(item.displayName): per 100g — \(Int(item.caloriesPer100g)) kcal, "
+                line += "P \(String(format: "%.1f", item.proteinPer100g))g, "
+                line += "C \(String(format: "%.1f", item.carbsPer100g))g, "
+                line += "F \(String(format: "%.1f", item.fatPer100g))g"
+                if let serving = item.servingDescription { line += " (serving: \(serving))" }
+                return line
+            }.joined(separator: "\n")
+        } catch {
+            return "Food database error: \(error.localizedDescription). Estimate the nutrition yourself."
+        }
     }
 
     @MainActor

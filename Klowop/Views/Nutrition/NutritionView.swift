@@ -43,21 +43,21 @@ struct NutritionView: View {
                     if dayMeals.isEmpty {
                         ContentUnavailableView("Nothing logged",
                                                systemImage: "fork.knife.circle",
-                                               description: Text("Log a meal with + or just tell the assistant what you ate."))
+                                               description: Text("Search foods or scan a barcode with +, or just tell the assistant what you ate."))
                             .padding(.top, 40)
                     }
                 }
                 .padding(.horizontal)
                 .padding(.bottom, 24)
             }
-            .navigationTitle("Food")
+            .navigationTitle("Health")
             .background(Color(.systemGroupedBackground))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingEditor = true } label: { Image(systemName: "plus") }
                 }
             }
-            .sheet(isPresented: $showingEditor) { MealEditorView(day: selectedDay) }
+            .sheet(isPresented: $showingEditor) { FoodSearchView(day: selectedDay) }
             .task {
                 await health.refresh(day: selectedDay)
                 weightHistory = await health.weightHistory()
