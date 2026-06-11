@@ -13,6 +13,8 @@ struct TodayView: View {
     @State private var settings = AppSettings.shared
     @State private var newTodoTitle = ""
     @State private var completedTodoCount = 0
+    @State private var briefing: String?
+    @State private var briefingLoading = false
 
     init() {
         let start = Calendar.current.startOfDay(for: .now)
@@ -38,6 +40,7 @@ struct TodayView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     greetingHeader
+                    briefingCard
                     statRow
                     scheduleCard
                     todosCard
@@ -72,6 +75,63 @@ struct TodayView: View {
         case ..<12: return "Good morning\(name)"
         case ..<18: return "Good afternoon\(name)"
         default: return "Good evening\(name)"
+        }
+    }
+
+    private var briefingCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Daily briefing", systemImage: "sparkles")
+                    .font(.headline)
+                    .foregroundStyle(Theme.assistant)
+                Spacer()
+                if briefingLoading {
+                    ProgressView()
+                } else {
+                    Button {
+                        generateBriefing()
+                    } label: {
+                        Image(systemName: briefing == nil ? "wand.and.stars" : "arrow.clockwise")
+                            .foregroundStyle(Theme.assistant)
+                    }
+                }
+            }
+            if let briefing {
+                Text(LocalizedStringKey(briefing))
+                    .font(.subheadline)
+                    .transition(.opacity)
+            } else if briefingLoading {
+                Text("Your secretary is reading through your day…")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Tap the wand for a secretary's summary of your day.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+        .animation(.smooth, value: briefing)
+    }
+
+    private func generateBriefing() {
+        briefingLoading = true
+        Task { @MainActor in
+            defer { briefingLoading = false }
+            do {
+                briefing = try await ClaudeAssistantService.shared.oneShot(
+                    """
+                    Write my daily briefing. First use tools to check: today's calendar events, \
+                    my open to-dos, today's nutrition so far, my Apple Health activity if connected, \
+                    and any subscriptions renewing in the next 7 days. \
+                    Then write a friendly, skimmable briefing under 120 words — lead with the most \
+                    important thing, use short bullet points, and end with one practical suggestion.
+                    """,
+                    context: context)
+            } catch {
+                briefing = error.localizedDescription
+            }
         }
     }
 

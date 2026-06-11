@@ -7,13 +7,14 @@ import Observation
 ///
 /// The conversation is kept as raw JSON message dictionaries and assistant responses are
 /// echoed back verbatim — this preserves thinking and tool_use blocks exactly as the API
-/// requires for multi-turn tool loops.
+/// requires for multi-turn tool loops. The conversation is persisted to disk so the
+/// secretary remembers context across app launches.
 @Observable
 final class ClaudeAssistantService {
     static let shared = ClaudeAssistantService()
 
     var isThinking = false
-    /// Text streamed token-by-token for the current turn, so the UI can render
+    /// Text streamed token-by-token for the current chat turn, so the UI can render
     /// the reply as it's written instead of waiting for the full message.
     var streamingText = ""
 
@@ -36,10 +37,49 @@ final class ClaudeAssistantService {
         }
     }
 
-    func resetConversation() {
-        conversation = []
+    private init() {
+        if let data = try? Data(contentsOf: Self.conversationFileURL),
+           let saved = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] {
+            conversation = saved
+        }
     }
 
+    // MARK: - Conversation persistence
+
+    private static var conversationFileURL: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("assistant_conversation.json")
+    }
+
+    func resetConversation() {
+        conversation = []
+        try? FileManager.default.removeItem(at: Self.conversationFileURL)
+    }
+
+    private func persistConversation() {
+        if let data = try? JSONSerialization.data(withJSONObject: conversation) {
+            try? data.write(to: Self.conversationFileURL)
+        }
+    }
+
+    /// Keeps the prompt bounded on long-lived conversations. Only trims at a plain
+    /// user-text turn so tool_use/tool_result pairs are never split.
+    private func trimConversationIfNeeded() {
+        guard conversation.count > 60 else { return }
+        let keepFrom = conversation.count - 40
+        for index in keepFrom..<conversation.count {
+            if conversation[index]["role"] as? String == "user",
+               conversation[index]["content"] is String {
+                conversation.removeFirst(index)
+                return
+            }
+        }
+    }
+
+    // MARK: - Public entry points
+
+    /// A chat turn: appended to the persistent conversation, streamed to the UI.
     @MainActor
     func send(_ userText: String, context: ModelContext) async throws -> String {
         guard !AppSettings.shared.anthropicAPIKey.isEmpty else {
@@ -51,17 +91,37 @@ final class ClaudeAssistantService {
             isThinking = false
             streamingText = ""
         }
-
         conversation.append(["role": "user", "content": userText])
+        let reply = try await runLoop(messages: &conversation, context: context, streamToUI: true)
+        trimConversationIfNeeded()
+        persistConversation()
+        return reply
+    }
 
+    /// A standalone request (e.g. the daily briefing) with full tool access but its
+    /// own throwaway conversation — doesn't touch the chat history or the chat UI.
+    @MainActor
+    func oneShot(_ prompt: String, context: ModelContext) async throws -> String {
+        guard !AppSettings.shared.anthropicAPIKey.isEmpty else {
+            throw AssistantError.missingAPIKey
+        }
+        var messages: [[String: Any]] = [["role": "user", "content": prompt]]
+        return try await runLoop(messages: &messages, context: context, streamToUI: false)
+    }
+
+    // MARK: - Tool loop
+
+    @MainActor
+    private func runLoop(messages: inout [[String: Any]], context: ModelContext,
+                         streamToUI: Bool) async throws -> String {
         var rounds = 0
         while true {
-            let response = try await requestMessage()
+            let response = try await requestMessage(messages: messages, streamToUI: streamToUI)
             let content = response["content"] as? [[String: Any]] ?? []
             let stopReason = response["stop_reason"] as? String ?? "end_turn"
 
             // Echo the assistant turn back verbatim (preserves thinking/tool_use blocks).
-            conversation.append(["role": "assistant", "content": content])
+            messages.append(["role": "assistant", "content": content])
 
             switch stopReason {
             case "tool_use":
@@ -81,7 +141,7 @@ final class ClaudeAssistantService {
                         "content": result,
                     ])
                 }
-                conversation.append(["role": "user", "content": results])
+                messages.append(["role": "user", "content": results])
 
             case "pause_turn":
                 // Server paused a long turn; re-send to let it resume.
@@ -125,7 +185,7 @@ final class ClaudeAssistantService {
     /// for live display, while the full content blocks (thinking, text, tool_use)
     /// are reconstructed verbatim so the tool loop can echo them back exactly.
     @MainActor
-    private func requestMessage() async throws -> [String: Any] {
+    private func requestMessage(messages: [[String: Any]], streamToUI: Bool) async throws -> [String: Any] {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.timeoutInterval = 300
@@ -140,7 +200,7 @@ final class ClaudeAssistantService {
             "thinking": ["type": "adaptive"],
             "system": systemPrompt(),
             "tools": AssistantTools.definitions,
-            "messages": conversation,
+            "messages": messages,
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -182,7 +242,7 @@ final class ClaudeAssistantService {
                 case "text_delta":
                     let text = delta["text"] as? String ?? ""
                     blocks[index]["text"] = (blocks[index]["text"] as? String ?? "") + text
-                    streamingText += text
+                    if streamToUI { streamingText += text }
                 case "thinking_delta":
                     blocks[index]["thinking"] = (blocks[index]["thinking"] as? String ?? "")
                         + (delta["thinking"] as? String ?? "")
@@ -219,7 +279,7 @@ final class ClaudeAssistantService {
         }
 
         // Between tool rounds, keep streamed narration visible with a separator.
-        if !streamingText.isEmpty { streamingText += "\n" }
+        if streamToUI, !streamingText.isEmpty { streamingText += "\n" }
 
         return ["content": blocks, "stop_reason": stopReason]
     }

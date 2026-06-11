@@ -89,6 +89,34 @@ enum AssistantTools {
                  properties: [:],
                  required: []),
 
+            tool("add_subscription",
+                 "Track a new recurring subscription the user mentions (e.g. they signed up for Netflix).",
+                 properties: [
+                    "name": str("Service name, e.g. Netflix"),
+                    "amount": ["type": "number", "description": "Cost per billing cycle"],
+                    "cycle": ["type": "string", "enum": ["weekly", "monthly", "yearly"], "description": "Billing cycle"],
+                    "next_renewal": str("Next renewal date, ISO 8601"),
+                 ],
+                 required: ["name", "amount", "cycle", "next_renewal"]),
+
+            tool("cancel_subscription",
+                 "Mark a tracked subscription as cancelled (stops renewal reminders). Use when the user says they cancelled a service.",
+                 properties: ["name": str("Subscription name (case-insensitive match)")],
+                 required: ["name"]),
+
+            tool("search_transactions",
+                 "Search transactions by merchant or category text. Call this for questions like 'how much did I spend at Amazon' or 'show my restaurant spending'.",
+                 properties: [
+                    "query": str("Text to match against merchant and category"),
+                    "days": ["type": "integer", "description": "How many days back to search. Default 30."],
+                 ],
+                 required: ["query"]),
+
+            tool("get_spending_summary",
+                 "Total spending grouped by category over a period. Call this for 'where does my money go' style questions.",
+                 properties: ["days": ["type": "integer", "description": "How many days back. Default 30."]],
+                 required: []),
+
             tool("get_health_summary",
                  "Get Apple Health data: today's Apple Watch activity (active calories burned, steps, exercise minutes) and the latest body composition (weight, body fat, lean mass from a smart scale). Call this when the user asks about workouts, calories burned, weight, or body composition.",
                  properties: ["date": str("Day for the activity numbers, ISO 8601. Omit for today.")],
@@ -128,6 +156,10 @@ enum AssistantTools {
             case "log_meal": return try await logMeal(input, context)
             case "get_nutrition_summary": return try nutritionSummary(input, context)
             case "get_finance_overview": return try financeOverview(context)
+            case "add_subscription": return try addSubscription(input, context)
+            case "cancel_subscription": return try cancelSubscription(input, context)
+            case "search_transactions": return try searchTransactions(input, context)
+            case "get_spending_summary": return try spendingSummary(input, context)
             case "get_health_summary": return await healthSummary(input)
             default: return "Error: unknown tool \(name)"
             }
@@ -251,6 +283,63 @@ enum AssistantTools {
         try context.save()
         let healthNote = meal.healthKitUUID != nil ? " Saved to Apple Health too." : ""
         return "Logged \(name) (\(calories) kcal) as \(mealType).\(healthNote)"
+    }
+
+    @MainActor
+    private static func addSubscription(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        guard let name = input["name"] as? String,
+              let amount = input["amount"] as? Double,
+              let cycle = input["cycle"] as? String,
+              let renewal = parseDate(input["next_renewal"]) else {
+            return "Error: name, amount, cycle and next_renewal (ISO 8601) are required."
+        }
+        context.insert(Subscription(name: name, amount: amount, billingCycle: cycle, nextRenewal: renewal))
+        try context.save()
+        return "Now tracking \(name): \(amount.asCurrency())/\(cycle), next renewal \(renewal.formatted(date: .abbreviated, time: .omitted))."
+    }
+
+    @MainActor
+    private static func cancelSubscription(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        guard let name = (input["name"] as? String)?.lowercased() else { return "Error: name is required." }
+        let active = try context.fetch(FetchDescriptor<Subscription>(predicate: #Predicate { $0.isActive }))
+        guard let match = active.first(where: { $0.name.lowercased().contains(name) }) else {
+            return "No active subscription matching '\(name)'. Active: \(active.map(\.name).joined(separator: ", "))"
+        }
+        match.isActive = false
+        try context.save()
+        return "Marked \(match.name) as cancelled — that frees up \(match.monthlyEquivalent.asCurrency()) per month."
+    }
+
+    @MainActor
+    private static func searchTransactions(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        guard let query = (input["query"] as? String)?.lowercased() else { return "Error: query is required." }
+        let days = (input["days"] as? Int) ?? 30
+        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: .now)!
+        let matches = try context.fetch(FetchDescriptor<MoneyTransaction>(
+            predicate: #Predicate { $0.date >= cutoff },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]))
+            .filter { $0.merchant.lowercased().contains(query) || $0.category.lowercased().contains(query) }
+        guard !matches.isEmpty else { return "No transactions matching '\(query)' in the last \(days) days." }
+        let total = matches.filter { $0.amount > 0 }.reduce(0) { $0 + $1.amount }
+        let lines = matches.prefix(20).map {
+            "- \($0.date.formatted(date: .abbreviated, time: .omitted)) \($0.merchant): \($0.amount.asCurrency()) [\($0.category)]"
+        }.joined(separator: "\n")
+        return "\(matches.count) matches, \(total.asCurrency()) spent in the last \(days) days:\n\(lines)"
+    }
+
+    @MainActor
+    private static func spendingSummary(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        let days = (input["days"] as? Int) ?? 30
+        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: .now)!
+        let spent = try context.fetch(FetchDescriptor<MoneyTransaction>(
+            predicate: #Predicate { $0.date >= cutoff && $0.amount > 0 }))
+        guard !spent.isEmpty else { return "No spending recorded in the last \(days) days." }
+        let byCategory = Dictionary(grouping: spent, by: \.category)
+            .mapValues { $0.reduce(0) { $0 + $1.amount } }
+            .sorted { $0.value > $1.value }
+        let total = spent.reduce(0) { $0 + $1.amount }
+        let lines = byCategory.map { "- \($0.key): \($0.value.asCurrency())" }.joined(separator: "\n")
+        return "Spending last \(days) days — total \(total.asCurrency()):\n\(lines)"
     }
 
     @MainActor
