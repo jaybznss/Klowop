@@ -1,0 +1,14 @@
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+.build/
+
+# Node companion server
+server/node_modules/
+server/.env
+server/data.json
+
+# macOS
+.DS_Store

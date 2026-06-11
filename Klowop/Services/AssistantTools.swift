@@ -1,0 +1,252 @@
+import Foundation
+import SwiftData
+
+/// Tool definitions exposed to Claude, and their execution against local data.
+/// Tool inputs/outputs are plain JSON dictionaries to match the Messages API wire format.
+enum AssistantTools {
+
+    static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    static func parseDate(_ value: Any?) -> Date? {
+        guard let s = value as? String else { return nil }
+        return isoFormatter.date(from: s)
+    }
+
+    // MARK: - Definitions sent in the `tools` array
+
+    static var definitions: [[String: Any]] {
+        [
+            tool("add_calendar_event",
+                 "Add an event to the user's agenda. Call this whenever the user asks to schedule, book, or plan something at a specific time.",
+                 properties: [
+                    "title": str("Event title"),
+                    "start": str("Start date-time in ISO 8601 with timezone offset, e.g. 2026-06-12T15:00:00+02:00"),
+                    "end": str("End date-time in ISO 8601 with timezone offset. If the user gives no duration, use one hour."),
+                    "location": str("Location (optional)"),
+                    "notes": str("Notes (optional)"),
+                 ],
+                 required: ["title", "start", "end"]),
+
+            tool("list_calendar_events",
+                 "List agenda events between two dates. Call this when the user asks what's on their schedule.",
+                 properties: [
+                    "from": str("Range start, ISO 8601 with timezone offset"),
+                    "to": str("Range end, ISO 8601 with timezone offset"),
+                 ],
+                 required: ["from", "to"]),
+
+            tool("add_todo",
+                 "Add an item to the user's to-do lists. Call this when the user asks to remember, buy, or do something without a fixed time.",
+                 properties: [
+                    "title": str("What needs to be done"),
+                    "list": str("List name, e.g. Inbox, Groceries, Work. Default Inbox."),
+                    "due": str("Optional due date-time, ISO 8601 with timezone offset"),
+                 ],
+                 required: ["title"]),
+
+            tool("complete_todo",
+                 "Mark a to-do item as done by its title (case-insensitive match).",
+                 properties: ["title": str("Title of the item to complete")],
+                 required: ["title"]),
+
+            tool("list_todos",
+                 "List the user's open to-do items, grouped by list.",
+                 properties: ["include_done": ["type": "boolean", "description": "Also include completed items"]],
+                 required: []),
+
+            tool("log_meal",
+                 "Log something the user ate or drank. Call this whenever the user mentions eating. Estimate calories and macros yourself if the user doesn't give them.",
+                 properties: [
+                    "name": str("What was eaten, e.g. 'Chicken caesar salad'"),
+                    "meal_type": ["type": "string", "enum": ["breakfast", "lunch", "dinner", "snack"], "description": "Which meal"],
+                    "calories": ["type": "integer", "description": "Estimated calories"],
+                    "protein": ["type": "number", "description": "Protein in grams (optional)"],
+                    "carbs": ["type": "number", "description": "Carbs in grams (optional)"],
+                    "fat": ["type": "number", "description": "Fat in grams (optional)"],
+                    "date": str("When it was eaten, ISO 8601 with timezone offset. Omit for now."),
+                 ],
+                 required: ["name", "meal_type", "calories"]),
+
+            tool("get_nutrition_summary",
+                 "Get calories and macros logged for a given day. Call this when the user asks how their eating is going.",
+                 properties: ["date": str("Day to summarize, ISO 8601. Omit for today.")],
+                 required: []),
+
+            tool("get_finance_overview",
+                 "Get account balances, recent transactions, and active subscriptions. Call this when the user asks about money, spending, or subscriptions.",
+                 properties: [:],
+                 required: []),
+        ]
+    }
+
+    private static func str(_ description: String) -> [String: Any] {
+        ["type": "string", "description": description]
+    }
+
+    private static func tool(_ name: String, _ description: String,
+                             properties: [String: Any], required: [String]) -> [String: Any] {
+        [
+            "name": name,
+            "description": description,
+            "input_schema": [
+                "type": "object",
+                "properties": properties,
+                "required": required,
+            ] as [String: Any],
+        ]
+    }
+
+    // MARK: - Execution
+
+    @MainActor
+    static func execute(name: String, input: [String: Any], context: ModelContext) -> String {
+        do {
+            switch name {
+            case "add_calendar_event": return try addCalendarEvent(input, context)
+            case "list_calendar_events": return try listCalendarEvents(input, context)
+            case "add_todo": return try addTodo(input, context)
+            case "complete_todo": return try completeTodo(input, context)
+            case "list_todos": return try listTodos(input, context)
+            case "log_meal": return try logMeal(input, context)
+            case "get_nutrition_summary": return try nutritionSummary(input, context)
+            case "get_finance_overview": return try financeOverview(context)
+            default: return "Error: unknown tool \(name)"
+            }
+        } catch {
+            return "Error: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private static func addCalendarEvent(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        guard let title = input["title"] as? String,
+              let start = parseDate(input["start"]),
+              let end = parseDate(input["end"]) else {
+            return "Error: title, start and end (ISO 8601) are required."
+        }
+        let event = CalendarEvent(title: title, startDate: start, endDate: end,
+                                  location: input["location"] as? String,
+                                  notes: input["notes"] as? String)
+        context.insert(event)
+        try context.save()
+        return "Created event '\(title)' on \(start.formatted(date: .abbreviated, time: .shortened)). It will sync to Google Calendar on the next sync."
+    }
+
+    @MainActor
+    private static func listCalendarEvents(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        guard let from = parseDate(input["from"]), let to = parseDate(input["to"]) else {
+            return "Error: from and to (ISO 8601) are required."
+        }
+        let descriptor = FetchDescriptor<CalendarEvent>(
+            predicate: #Predicate { $0.startDate >= from && $0.startDate <= to },
+            sortBy: [SortDescriptor(\.startDate)]
+        )
+        let events = try context.fetch(descriptor)
+        if events.isEmpty { return "No events between \(from.formatted()) and \(to.formatted())." }
+        return events.map {
+            "- \($0.title): \($0.startDate.formatted(date: .abbreviated, time: .shortened)) to \($0.endDate.formatted(date: .omitted, time: .shortened))\($0.location.map { " at \($0)" } ?? "")"
+        }.joined(separator: "\n")
+    }
+
+    @MainActor
+    private static func addTodo(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        guard let title = input["title"] as? String else { return "Error: title is required." }
+        let item = TodoItem(title: title,
+                            listName: (input["list"] as? String) ?? "Inbox",
+                            dueDate: parseDate(input["due"]))
+        context.insert(item)
+        try context.save()
+        return "Added '\(title)' to the \(item.listName) list."
+    }
+
+    @MainActor
+    private static func completeTodo(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        guard let title = (input["title"] as? String)?.lowercased() else { return "Error: title is required." }
+        let descriptor = FetchDescriptor<TodoItem>(predicate: #Predicate { !$0.isDone })
+        let open = try context.fetch(descriptor)
+        guard let match = open.first(where: { $0.title.lowercased().contains(title) }) else {
+            return "No open to-do matching '\(title)'. Open items: \(open.map(\.title).joined(separator: ", "))"
+        }
+        match.isDone = true
+        try context.save()
+        return "Marked '\(match.title)' as done."
+    }
+
+    @MainActor
+    private static func listTodos(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        let includeDone = (input["include_done"] as? Bool) ?? false
+        let descriptor = FetchDescriptor<TodoItem>(sortBy: [SortDescriptor(\.createdAt)])
+        let items = try context.fetch(descriptor).filter { includeDone || !$0.isDone }
+        if items.isEmpty { return "No open to-dos. 🎉" }
+        let grouped = Dictionary(grouping: items, by: \.listName)
+        return grouped.keys.sorted().map { list in
+            let lines = grouped[list]!.map { item in
+                "  \(item.isDone ? "[x]" : "[ ]") \(item.title)\(item.dueDate.map { " (due \($0.formatted(date: .abbreviated, time: .omitted)))" } ?? "")"
+            }.joined(separator: "\n")
+            return "\(list):\n\(lines)"
+        }.joined(separator: "\n")
+    }
+
+    @MainActor
+    private static func logMeal(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        guard let name = input["name"] as? String,
+              let mealType = input["meal_type"] as? String,
+              let calories = input["calories"] as? Int else {
+            return "Error: name, meal_type and calories are required."
+        }
+        let meal = Meal(name: name, mealType: mealType, calories: calories,
+                        protein: (input["protein"] as? Double) ?? 0,
+                        carbs: (input["carbs"] as? Double) ?? 0,
+                        fat: (input["fat"] as? Double) ?? 0,
+                        date: parseDate(input["date"]) ?? .now)
+        context.insert(meal)
+        try context.save()
+        return "Logged \(name) (\(calories) kcal) as \(mealType)."
+    }
+
+    @MainActor
+    private static func nutritionSummary(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        let day = parseDate(input["date"]) ?? .now
+        let start = Calendar.current.startOfDay(for: day)
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!
+        let descriptor = FetchDescriptor<Meal>(
+            predicate: #Predicate { $0.date >= start && $0.date < end },
+            sortBy: [SortDescriptor(\.date)]
+        )
+        let meals = try context.fetch(descriptor)
+        if meals.isEmpty { return "Nothing logged on \(start.formatted(date: .abbreviated, time: .omitted))." }
+        let calories = meals.reduce(0) { $0 + $1.calories }
+        let protein = meals.reduce(0.0) { $0 + $1.protein }
+        let carbs = meals.reduce(0.0) { $0 + $1.carbs }
+        let fat = meals.reduce(0.0) { $0 + $1.fat }
+        let goal = AppSettings.shared.dailyCalorieGoal
+        let list = meals.map { "- \($0.mealType): \($0.name) (\($0.calories) kcal)" }.joined(separator: "\n")
+        return "Total: \(calories)/\(goal) kcal, protein \(Int(protein))g, carbs \(Int(carbs))g, fat \(Int(fat))g.\n\(list)"
+    }
+
+    @MainActor
+    private static func financeOverview(_ context: ModelContext) throws -> String {
+        let accounts = try context.fetch(FetchDescriptor<FinancialAccount>())
+        var txDescriptor = FetchDescriptor<MoneyTransaction>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        txDescriptor.fetchLimit = 15
+        let transactions = try context.fetch(txDescriptor)
+        let subs = try context.fetch(FetchDescriptor<Subscription>(predicate: #Predicate { $0.isActive }))
+
+        var out = "Accounts:\n"
+        out += accounts.isEmpty ? "  (none linked yet)\n"
+            : accounts.map { "  - \($0.name) (\($0.institution), \($0.type)): \($0.balance.asCurrency($0.currencyCode))" }.joined(separator: "\n") + "\n"
+        out += "Recent transactions:\n"
+        out += transactions.isEmpty ? "  (none)\n"
+            : transactions.map { "  - \($0.date.formatted(date: .abbreviated, time: .omitted)) \($0.merchant): \($0.amount.asCurrency()) [\($0.category)]" }.joined(separator: "\n") + "\n"
+        out += "Active subscriptions:\n"
+        out += subs.isEmpty ? "  (none)"
+            : subs.map { "  - \($0.name): \($0.amount.asCurrency())/\($0.billingCycle), next renewal \($0.nextRenewal.formatted(date: .abbreviated, time: .omitted))" }.joined(separator: "\n")
+        let monthlyTotal = subs.reduce(0.0) { $0 + $1.monthlyEquivalent }
+        out += "\nSubscriptions cost ≈ \(monthlyTotal.asCurrency()) per month."
+        return out
+    }
+}
