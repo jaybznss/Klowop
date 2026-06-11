@@ -104,6 +104,14 @@ struct FoodSearchView: View {
                     if let brand = item.brand {
                         Text(brand).font(.caption).foregroundStyle(.secondary)
                     }
+                    Text(item.source)
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            (item.source == "USDA" ? Color.blue : Theme.nutrition).opacity(0.12),
+                            in: .capsule)
+                        .foregroundStyle(item.source == "USDA" ? Color.blue : Theme.nutrition)
                     if let serving = item.servingDescription {
                         Text("serving \(serving)").font(.caption).foregroundStyle(.tertiary)
                     }

@@ -88,7 +88,17 @@ What you get:
 
 ---
 
-## 6. Home-screen widget (~1 min)
+## 6. Food database API key (~2 min, optional but recommended)
+
+Food search combines two sources: **Open Food Facts** (branded products & barcodes — no key needed) and **USDA FoodData Central** (the authoritative database for generic foods like "chicken breast"). USDA works out of the box on the shared `DEMO_KEY`, but it's rate-limited.
+
+1. Go to [fdc.nal.usda.gov/api-key-signup](https://fdc.nal.usda.gov/api-key-signup.html), enter your name + email.
+2. The key arrives by email instantly.
+3. In the app: **Settings → Food database → paste the key.**
+
+---
+
+## 7. Home-screen widget (~1 min)
 
 The **KlowopWidgets** extension ships small and medium widgets: calorie ring, your next events, and open to-do count.
 

@@ -31,6 +31,9 @@ final class AppSettings {
     var briefingHour: Int {
         didSet { UserDefaults.standard.set(briefingHour, forKey: "briefing_hour") }
     }
+    var usdaAPIKey: String {
+        didSet { UserDefaults.standard.set(usdaAPIKey, forKey: "usda_api_key") }
+    }
 
     private init() {
         anthropicAPIKey = KeychainHelper.get("anthropic_api_key") ?? ""
@@ -39,6 +42,7 @@ final class AppSettings {
         let goal = UserDefaults.standard.integer(forKey: "daily_calorie_goal")
         dailyCalorieGoal = goal == 0 ? 2200 : goal
         userName = UserDefaults.standard.string(forKey: "user_name") ?? ""
+        usdaAPIKey = UserDefaults.standard.string(forKey: "usda_api_key") ?? ""
         autoBriefingEnabled = UserDefaults.standard.bool(forKey: "auto_briefing_enabled")
         let hour = UserDefaults.standard.integer(forKey: "briefing_hour")
         briefingHour = hour == 0 ? 8 : hour

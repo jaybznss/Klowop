@@ -133,6 +133,16 @@ struct SettingsView: View {
             }
 
             Section {
+                TextField("USDA API key (optional)", text: $settings.usdaAPIKey)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            } header: {
+                Text("Food database")
+            } footer: {
+                Text("Food search combines USDA FoodData Central with Open Food Facts. Without a key it uses USDA's shared DEMO_KEY (rate-limited) — get a free personal key in 2 minutes at fdc.nal.usda.gov/api-key-signup.")
+            }
+
+            Section {
                 TextField("Companion server URL", text: $settings.plaidServerURL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
