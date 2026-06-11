@@ -171,7 +171,10 @@ struct TodayWidgetView: View {
                 .stroke(Color.green.opacity(0.2), lineWidth: 6)
             Circle()
                 .trim(from: 0, to: entry.progress)
-                .stroke(Color.green, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                .stroke(
+                    LinearGradient(colors: [.green, .mint],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    style: StrokeStyle(lineWidth: 6, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             VStack(spacing: 0) {
                 Text("\(entry.calories)")

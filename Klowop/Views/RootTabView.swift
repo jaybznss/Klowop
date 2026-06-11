@@ -23,6 +23,8 @@ struct RootTabView: View {
         }
         // Liquid Glass: let the floating tab bar shrink away while scrolling content.
         .tabBarMinimizeBehavior(.onScrollDown)
+        // One brand accent across navigation, toggles, and controls.
+        .tint(Theme.assistant)
         .fullScreenCover(isPresented: $showOnboarding) {
             OnboardingView(isPresented: $showOnboarding)
         }

@@ -93,9 +93,7 @@ struct NutritionView: View {
 
     private var weeklyCaloriesCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Last 7 days", systemImage: "chart.bar.fill")
-                .font(.headline)
-                .foregroundStyle(Theme.nutrition)
+            CardHeader(title: "Last 7 days", symbol: "chart.bar.fill", gradient: Theme.nutritionGradient)
             Chart(weekData) { entry in
                 BarMark(
                     x: .value("Day", entry.day, unit: .day),
@@ -103,10 +101,10 @@ struct NutritionView: View {
                 )
                 .foregroundStyle(
                     Calendar.current.isDate(entry.day, inSameDayAs: selectedDay)
-                        ? Theme.nutrition.gradient
-                        : Theme.nutrition.opacity(0.35).gradient
+                        ? AnyShapeStyle(Theme.nutritionGradient)
+                        : AnyShapeStyle(Theme.nutrition.opacity(0.3))
                 )
-                .cornerRadius(4)
+                .cornerRadius(6)
 
                 RuleMark(y: .value("Goal", settings.dailyCalorieGoal))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
@@ -127,9 +125,7 @@ struct NutritionView: View {
 
     private var activityCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Activity", systemImage: "figure.run")
-                .font(.headline)
-                .foregroundStyle(.pink)
+            CardHeader(title: "Activity", symbol: "figure.run", gradient: Theme.activityGradient)
             HStack {
                 activityStat(value: "\(Int(health.activity?.activeEnergy ?? 0))",
                              unit: "kcal burned", symbol: "flame.fill", color: .pink)
@@ -168,9 +164,7 @@ struct NutritionView: View {
 
     private var bodyCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Body", systemImage: "figure.arms.open")
-                .font(.headline)
-                .foregroundStyle(.cyan)
+            CardHeader(title: "Body", symbol: "figure.arms.open", gradient: Theme.bodyGradient)
             HStack {
                 if let weight = health.bodyComposition.weightKg {
                     bodyStat(value: Measurement(value: weight.value, unit: UnitMass.kilograms)
@@ -256,12 +250,15 @@ struct NutritionView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Gauge(value: min(1, Double(calories) / Double(max(1, settings.dailyCalorieGoal)))) {
-                    EmptyView()
+                ZStack {
+                    ProgressRing(progress: Double(calories) / Double(max(1, settings.dailyCalorieGoal)),
+                                 gradient: Theme.nutritionGradient)
+                    Text("\(Int(Double(calories) / Double(max(1, settings.dailyCalorieGoal)) * 100))%")
+                        .font(.caption.weight(.bold))
+                        .fontDesign(.rounded)
+                        .monospacedDigit()
                 }
-                .gaugeStyle(.accessoryCircularCapacity)
-                .tint(Theme.nutrition)
-                .scaleEffect(1.2)
+                .frame(width: 64, height: 64)
             }
             HStack {
                 macro("Protein", protein, .red)

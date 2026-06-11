@@ -121,7 +121,7 @@ struct AssistantView: View {
             Text(LocalizedStringKey(assistant.streamingText))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(.background.secondary, in: .rect(cornerRadius: 18, style: .continuous))
+                .background(.background.secondary, in: .rect(cornerRadius: 20, style: .continuous))
             Spacer(minLength: 48)
         }
         .padding(.horizontal)
@@ -135,8 +135,10 @@ struct AssistantView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
-                    message.role == "user" ? AnyShapeStyle(Theme.assistant) : AnyShapeStyle(.background.secondary),
-                    in: .rect(cornerRadius: 18, style: .continuous)
+                    message.role == "user"
+                        ? AnyShapeStyle(Theme.assistantGradient)
+                        : AnyShapeStyle(.background.secondary),
+                    in: .rect(cornerRadius: 20, style: .continuous)
                 )
                 .foregroundStyle(message.role == "user" ? .white : .primary)
             if message.role != "user" { Spacer(minLength: 48) }

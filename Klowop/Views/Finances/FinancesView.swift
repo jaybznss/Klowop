@@ -157,16 +157,14 @@ struct FinancesView: View {
 
     private var spendingChartCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Spending · last 30 days", systemImage: "chart.bar.fill")
-                .font(.headline)
-                .foregroundStyle(Theme.finance)
+            CardHeader(title: "Spending · last 30 days", symbol: "chart.bar.fill", gradient: Theme.financeGradient)
             Chart(spendingByDay) { entry in
                 BarMark(
                     x: .value("Day", entry.day, unit: .day),
                     y: .value("Spent", entry.amount)
                 )
-                .foregroundStyle(Theme.finance.gradient)
-                .cornerRadius(2)
+                .foregroundStyle(Theme.financeGradient)
+                .cornerRadius(3)
             }
             .chartXAxis {
                 AxisMarks(values: .stride(by: .day, count: 7)) { _ in
@@ -193,10 +191,7 @@ struct FinancesView: View {
     private var budgetsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Budgets · this month", systemImage: "gauge.with.needle")
-                    .font(.headline)
-                    .foregroundStyle(.orange)
-                Spacer()
+                CardHeader(title: "Budgets · this month", symbol: "gauge.with.needle", gradient: Theme.budgetGradient)
                 Button { showingBudgetEditor = true } label: {
                     Image(systemName: "plus.circle.fill").foregroundStyle(.orange)
                 }
@@ -238,9 +233,7 @@ struct FinancesView: View {
 
     private var accountsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Accounts", systemImage: "building.columns.fill")
-                .font(.headline)
-                .foregroundStyle(Theme.finance)
+            CardHeader(title: "Accounts", symbol: "building.columns.fill", gradient: Theme.financeGradient)
             if accounts.isEmpty {
                 Text("No accounts yet. Link your bank above — balances and transactions sync automatically.")
                     .font(.subheadline)
@@ -271,10 +264,7 @@ struct FinancesView: View {
             SubscriptionsView()
         } label: {
             HStack {
-                Label("Subscriptions", systemImage: "repeat.circle.fill")
-                    .font(.headline)
-                    .foregroundStyle(Theme.assistant)
-                Spacer()
+                CardHeader(title: "Subscriptions", symbol: "repeat", gradient: Theme.assistantGradient)
                 VStack(alignment: .trailing) {
                     Text(monthlySubscriptionCost.asCurrency() + "/mo")
                         .font(.subheadline.weight(.semibold))
@@ -294,8 +284,7 @@ struct FinancesView: View {
 
     private var transactionsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Recent activity", systemImage: "list.bullet")
-                .font(.headline)
+            CardHeader(title: "Recent activity", symbol: "list.bullet", gradient: Theme.financeGradient)
             if transactions.isEmpty {
                 Text("Transactions appear here after you link a bank.")
                     .font(.subheadline)

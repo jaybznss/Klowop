@@ -83,10 +83,7 @@ struct TodayView: View {
     private var briefingCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Daily briefing", systemImage: "sparkles")
-                    .font(.headline)
-                    .foregroundStyle(Theme.assistant)
-                Spacer()
+                CardHeader(title: "Daily briefing", symbol: "sparkles", gradient: Theme.assistantGradient)
                 if briefingLoading {
                     ProgressView()
                 } else {
@@ -150,11 +147,19 @@ struct TodayView: View {
     private func statTile(title: String, value: String, detail: String,
                           symbol: String, color: Color, progress: Double?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: symbol)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(color)
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 24, height: 24)
+                    .background(color.gradient, in: .rect(cornerRadius: 7, style: .continuous))
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
             Text(value)
                 .font(.title2.weight(.bold))
+                .fontDesign(.rounded)
                 .monospacedDigit()
                 .contentTransition(.numericText())
             Text(detail)
@@ -171,9 +176,7 @@ struct TodayView: View {
 
     private var scheduleCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Schedule", systemImage: "calendar")
-                .font(.headline)
-                .foregroundStyle(Theme.agenda)
+            CardHeader(title: "Schedule", symbol: "calendar", gradient: Theme.agendaGradient)
             if todayEvents.isEmpty {
                 Text("Nothing scheduled today.")
                     .font(.subheadline)
@@ -201,9 +204,7 @@ struct TodayView: View {
 
     private var todosCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("To-dos", systemImage: "checklist")
-                .font(.headline)
-                .foregroundStyle(Theme.assistant)
+            CardHeader(title: "To-dos", symbol: "checklist", gradient: Theme.assistantGradient)
             ForEach(openTodos.prefix(8)) { todo in
                 Button {
                     withAnimation(.snappy) {
