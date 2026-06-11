@@ -16,7 +16,11 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(plaidServerURL, forKey: "plaid_server_url") }
     }
     var dailyCalorieGoal: Int {
-        didSet { UserDefaults.standard.set(dailyCalorieGoal, forKey: "daily_calorie_goal") }
+        didSet {
+            UserDefaults.standard.set(dailyCalorieGoal, forKey: "daily_calorie_goal")
+            // Mirrored to the app group so the widget can show the same goal.
+            UserDefaults(suiteName: AppGroup.id)?.set(dailyCalorieGoal, forKey: "daily_calorie_goal")
+        }
     }
     var userName: String {
         didSet { UserDefaults.standard.set(userName, forKey: "user_name") }

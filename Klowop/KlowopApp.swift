@@ -1,21 +1,15 @@
 import SwiftUI
 import SwiftData
+import WidgetKit
 
 @main
 struct KlowopApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     let container: ModelContainer
 
     init() {
         do {
-            container = try ModelContainer(for:
-                Meal.self,
-                CalendarEvent.self,
-                TodoItem.self,
-                FinancialAccount.self,
-                MoneyTransaction.self,
-                Subscription.self,
-                ChatMessage.self
-            )
+            container = try AppGroup.makeModelContainer()
         } catch {
             fatalError("Failed to create model container: \(error)")
         }
@@ -26,5 +20,11 @@ struct KlowopApp: App {
             RootTabView()
         }
         .modelContainer(container)
+        .onChange(of: scenePhase) { _, phase in
+            // Keep home-screen widgets in sync whenever the app leaves the foreground.
+            if phase == .background || phase == .inactive {
+                WidgetCenter.shared.reloadAllTimelines()
+            }
+        }
     }
 }

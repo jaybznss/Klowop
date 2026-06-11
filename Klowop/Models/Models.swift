@@ -1,6 +1,22 @@
 import Foundation
 import SwiftData
 
+/// Shared between the app and the widget extension so both read the same database.
+enum AppGroup {
+    static let id = "group.com.jaybznss.klowop"
+
+    static var schema: Schema {
+        Schema([Meal.self, CalendarEvent.self, TodoItem.self, FinancialAccount.self,
+                MoneyTransaction.self, Subscription.self, ChatMessage.self])
+    }
+
+    static func makeModelContainer() throws -> ModelContainer {
+        let configuration = ModelConfiguration("Klowop", schema: schema,
+                                               groupContainer: .identifier(id))
+        return try ModelContainer(for: schema, configurations: [configuration])
+    }
+}
+
 // MARK: - Nutrition
 
 @Model

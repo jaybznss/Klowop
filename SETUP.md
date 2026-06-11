@@ -89,6 +89,20 @@ What you get:
 
 ---
 
+## 6. Home-screen widget (~1 min)
+
+The **KlowopWidgets** extension ships small and medium widgets: calorie ring, your next events, and open to-do count.
+
+1. Re-run `xcodegen generate` after pulling (a second target was added), then build the **Klowop** scheme as usual — the widget embeds automatically.
+2. With automatic signing, Xcode registers the App Group (`group.com.jaybznss.klowop`) for both targets on first build. If signing complains, select each target → Signing & Capabilities and confirm your team is set.
+3. On your phone: long-press the home screen → **+** → search **Klowop** → add the widget.
+
+Widgets refresh whenever you leave the app and roughly every 30 minutes.
+
+> **Note:** the app's database moved into the shared App Group container so the widget can read it. If you had test data from an earlier build, it will start fresh (one-time, dev only).
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |

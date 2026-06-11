@@ -8,7 +8,8 @@ A native iOS app that runs your whole life from one place, designed to look and 
 | **Agenda** | Calendar with **two-way Google Calendar sync** (OAuth, no password stored) |
 | **Food** | Meal logging with calories and macros, daily goal ring, history by day — plus **Apple Health**: Apple Watch activity (calories burned, steps, exercise) and body composition from smart scales like the Hume BodyPod, with net-calorie math. Logged meals write back to Health. |
 | **Money** | Bank accounts and transactions via **Plaid**, automatic **subscription detection** with renewal reminders |
-| **Assistant** | A secretary you can talk to, powered by **Claude**. It schedules events, manages to-do lists, logs what you eat, and answers questions about your money — by actually using the app's data, not guessing |
+| **Assistant** | A secretary you can talk to, powered by **Claude** with streamed replies. It schedules events, manages to-do lists, logs what you eat, and answers questions about your money and health — by actually using the app's data, not guessing |
+| **Widgets** | Small & medium home-screen widgets: calorie ring, next events, open to-dos |
 
 ## How it's built
 
