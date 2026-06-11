@@ -46,9 +46,15 @@ struct TodayView: View {
                     todosCard
                 }
                 .padding(.horizontal)
+                .padding(.bottom, 24)
             }
             .navigationTitle("Today")
             .background(Color(.systemGroupedBackground))
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
+                }
+            }
             .animation(.snappy, value: openTodos.count)
             .sensoryFeedback(.success, trigger: completedTodoCount)
             .sensoryFeedback(.impact(flexibility: .soft), trigger: openTodos.count) { old, new in
@@ -58,14 +64,10 @@ struct TodayView: View {
     }
 
     private var greetingHeader: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(greeting)
-                .font(.title2.weight(.semibold))
-            Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.top, 4)
+        Text("\(greeting) · \(Date.now.formatted(.dateTime.weekday(.wide).month().day()))")
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.top, 2)
     }
 
     private var greeting: String {
@@ -111,7 +113,7 @@ struct TodayView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card()
+        .heroCard(Theme.assistant)
         .animation(.smooth, value: briefing)
     }
 

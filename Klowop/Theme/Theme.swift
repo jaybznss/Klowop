@@ -15,11 +15,34 @@ struct CardStyle: ViewModifier {
         content
             .padding(16)
             .background(.background.secondary, in: .rect(cornerRadius: Theme.cornerRadius, style: .continuous))
+            .cardScrollFade()
+    }
+}
+
+/// Cards gently fade and shrink as they scroll out of view.
+struct CardScrollFade: ViewModifier {
+    func body(content: Content) -> some View {
+        content.scrollTransition(.interactive) { view, phase in
+            view
+                .opacity(phase.isIdentity ? 1 : 0.6)
+                .scaleEffect(phase.isIdentity ? 1 : 0.96)
+        }
     }
 }
 
 extension View {
     func card() -> some View { modifier(CardStyle()) }
+    func cardScrollFade() -> some View { modifier(CardScrollFade()) }
+
+    /// Hero treatment: a soft tinted gradient instead of the flat card fill.
+    func heroCard(_ color: Color) -> some View {
+        padding(16)
+            .background(
+                LinearGradient(colors: [color.opacity(0.16), color.opacity(0.06)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: .rect(cornerRadius: Theme.cornerRadius, style: .continuous))
+            .cardScrollFade()
+    }
 }
 
 extension Double {

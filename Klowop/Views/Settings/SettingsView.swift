@@ -142,7 +142,20 @@ struct SettingsView: View {
             } footer: {
                 Text("URL of the Klowop companion server that talks to Plaid (default http://localhost:8484 for the simulator). See SETUP.md step 4.")
             }
+            Section {
+                LabeledContent("Version", value: appVersion)
+            } footer: {
+                Text("Klowop — your life, one app.")
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
+            }
         }
         .navigationTitle("Settings")
+    }
+
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        return "\(version) (\(build))"
     }
 }

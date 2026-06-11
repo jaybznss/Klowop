@@ -75,20 +75,45 @@ struct AssistantView: View {
         }
     }
 
+    private let suggestions = [
+        "What's on my schedule this week?",
+        "I just had a coffee and a croissant",
+        "How are my budgets doing?",
+        "Add call mom to my to-dos",
+    ]
+
     private var welcome: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             Image(systemName: "sparkles")
                 .font(.system(size: 40))
-                .foregroundStyle(Theme.assistant)
+                .foregroundStyle(
+                    LinearGradient(colors: [.indigo, Theme.assistant],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing))
             Text("I'm your secretary.")
                 .font(.headline)
-            Text("Try: \"Schedule lunch with Sam tomorrow at noon\", \"I just ate a chicken wrap\", \"What do I need to do this week?\", or \"How much do my subscriptions cost?\"")
+            Text("I can schedule things, keep your lists, log your meals, and answer money questions.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, 40)
+            VStack(spacing: 8) {
+                ForEach(suggestions, id: \.self) { suggestion in
+                    Button {
+                        input = suggestion
+                        send()
+                    } label: {
+                        Text(suggestion)
+                            .font(.subheadline)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
+                            .background(.background.secondary, in: .capsule)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 4)
         }
-        .padding(.top, 60)
+        .padding(.top, 48)
     }
 
     private var streamingBubble: some View {

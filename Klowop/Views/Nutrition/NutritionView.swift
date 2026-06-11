@@ -48,6 +48,7 @@ struct NutritionView: View {
                     }
                 }
                 .padding(.horizontal)
+                .padding(.bottom, 24)
             }
             .navigationTitle("Food")
             .background(Color(.systemGroupedBackground))

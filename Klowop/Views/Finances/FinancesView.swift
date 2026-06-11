@@ -23,14 +23,21 @@ struct FinancesView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    netWorthCard
-                    if !transactions.isEmpty { spendingChartCard }
-                    budgetsCard
-                    accountsCard
-                    subscriptionsTeaser
-                    transactionsCard
+                    if isEmptyState {
+                        moneyEmptyCard
+                        subscriptionsTeaser
+                        budgetsCard
+                    } else {
+                        netWorthCard
+                        if !transactions.isEmpty { spendingChartCard }
+                        budgetsCard
+                        accountsCard
+                        subscriptionsTeaser
+                        transactionsCard
+                    }
                 }
                 .padding(.horizontal)
+                .padding(.bottom, 24)
             }
             .navigationTitle("Money")
             .background(Color(.systemGroupedBackground))
@@ -55,6 +62,29 @@ struct FinancesView: View {
         }
     }
 
+    private var isEmptyState: Bool { accounts.isEmpty && transactions.isEmpty }
+
+    private var moneyEmptyCard: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "building.columns.fill")
+                .font(.system(size: 42))
+                .foregroundStyle(Theme.finance)
+                .padding(.top, 8)
+            Text("Connect your money")
+                .font(.title3.weight(.semibold))
+            Text("Link your banks to see balances, transactions, and subscriptions across all your accounts — and let your assistant answer money questions.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            if let error = plaid.lastError {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+            linkControls
+        }
+        .frame(maxWidth: .infinity)
+        .heroCard(Theme.finance)
+    }
+
     private var netWorthCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Net balance")
@@ -71,32 +101,37 @@ struct FinancesView: View {
             if let error = plaid.lastError {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
-            if plaid.pendingLinkToken != nil {
-                HStack {
-                    ProgressView()
-                    Text("Waiting for you to finish linking in the browser…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Cancel") { plaid.cancelPendingLink() }
-                        .font(.caption)
-                }
-                .padding(.top, 6)
-            } else {
-                Button {
-                    Task { await plaid.startLinkFlow(context: context) }
-                } label: {
-                    Label(accounts.isEmpty ? "Link a bank account" : "Link another account",
-                          systemImage: "building.columns")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.glassProminent)
-                .tint(Theme.finance)
-                .padding(.top, 6)
-            }
+            linkControls
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .card()
+    }
+
+    @ViewBuilder
+    private var linkControls: some View {
+        if plaid.pendingLinkToken != nil {
+            HStack {
+                ProgressView()
+                Text("Waiting for you to finish linking in the browser…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Cancel") { plaid.cancelPendingLink() }
+                    .font(.caption)
+            }
+            .padding(.top, 6)
+        } else {
+            Button {
+                Task { await plaid.startLinkFlow(context: context) }
+            } label: {
+                Label(accounts.isEmpty ? "Link a bank account" : "Link another account",
+                      systemImage: "building.columns")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.glassProminent)
+            .tint(Theme.finance)
+            .padding(.top, 6)
+        }
     }
 
     // MARK: - Spending chart
