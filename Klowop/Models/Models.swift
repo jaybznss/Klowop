@@ -13,6 +13,7 @@ final class Meal {
     var fat: Double             // grams
     var date: Date
     var notes: String?
+    var healthKitUUID: String?   // links the meal to its Apple Health samples
 
     init(name: String, mealType: String, calories: Int,
          protein: Double = 0, carbs: Double = 0, fat: Double = 0,

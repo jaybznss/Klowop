@@ -73,6 +73,22 @@ Balances, transactions, and detected subscriptions then sync into the Money tab 
 
 ---
 
+## 5. Apple Health (~1 min)
+
+No developer setup needed — the HealthKit capability is already in `project.yml`.
+
+1. Run the app on a **physical iPhone** (the simulator has no Watch or scale data).
+2. **Settings → Apple Health → Connect Apple Health** and allow all categories.
+
+What you get:
+
+- **Activity card** in the Food tab: active calories burned, steps, and exercise minutes from your Apple Watch, plus net intake (eaten − burned).
+- **Body card**: latest weight, body fat %, and lean mass. The **Hume BodyPod** (and most smart scales) sync these to Apple Health automatically — make sure Health sync is enabled in the Hume/Eufy app, and they'll flow straight into Klowop.
+- Every meal you log (manually or via the assistant) is written to Apple Health as dietary energy/protein/carbs/fat, and removed from Health if you delete it in the app.
+- The assistant can answer "how much did I burn today?" or "what's my weight trend?" via its `get_health_summary` tool.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |

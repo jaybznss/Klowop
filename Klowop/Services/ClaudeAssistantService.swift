@@ -67,7 +67,7 @@ final class ClaudeAssistantService {
                     let toolName = block["name"] as? String ?? ""
                     let toolInput = block["input"] as? [String: Any] ?? [:]
                     let toolID = block["id"] as? String ?? ""
-                    let result = AssistantTools.execute(name: toolName, input: toolInput, context: context)
+                    let result = await AssistantTools.execute(name: toolName, input: toolInput, context: context)
                     results.append([
                         "type": "tool_result",
                         "tool_use_id": toolID,

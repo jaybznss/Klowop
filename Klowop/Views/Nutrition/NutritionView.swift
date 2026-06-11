@@ -6,6 +6,7 @@ struct NutritionView: View {
     @State private var selectedDay = Calendar.current.startOfDay(for: .now)
     @State private var showingEditor = false
     @State private var settings = AppSettings.shared
+    @State private var health = HealthKitService.shared
     @Query(sort: \Meal.date) private var allMeals: [Meal]
 
     private var dayMeals: [Meal] {
@@ -26,6 +27,10 @@ struct NutritionView: View {
                 VStack(spacing: 16) {
                     dayPicker
                     summaryCard
+                    if health.isEnabled {
+                        activityCard
+                        if !health.bodyComposition.isEmpty { bodyCard }
+                    }
                     ForEach(mealOrder, id: \.self) { type in
                         let meals = dayMeals.filter { $0.mealType == type }
                         if !meals.isEmpty {
@@ -49,7 +54,95 @@ struct NutritionView: View {
                 }
             }
             .sheet(isPresented: $showingEditor) { MealEditorView(day: selectedDay) }
+            .task { await health.refresh(day: selectedDay) }
+            .onChange(of: selectedDay) {
+                Task { await health.refresh(day: selectedDay) }
+            }
+            .refreshable { await health.refresh(day: selectedDay) }
         }
+    }
+
+    // MARK: - Apple Health cards
+
+    private var activityCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Activity", systemImage: "figure.run")
+                .font(.headline)
+                .foregroundStyle(.pink)
+            HStack {
+                activityStat(value: "\(Int(health.activity?.activeEnergy ?? 0))",
+                             unit: "kcal burned", symbol: "flame.fill", color: .pink)
+                activityStat(value: "\(Int(health.activity?.steps ?? 0))",
+                             unit: "steps", symbol: "figure.walk", color: .teal)
+                activityStat(value: "\(Int(health.activity?.exerciseMinutes ?? 0))",
+                             unit: "exercise min", symbol: "timer", color: .green)
+            }
+            netCaloriesLine
+            Text("From Apple Watch via Apple Health")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+    }
+
+    private var netCaloriesLine: some View {
+        let burned = Int(health.activity?.activeEnergy ?? 0)
+        let net = calories - burned
+        return Text("Net intake today: **\(net) kcal** (\(calories) eaten − \(burned) burned)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
+    private func activityStat(value: String, unit: String, symbol: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: symbol).foregroundStyle(color)
+            Text(value).font(.headline).monospacedDigit()
+            Text(unit).font(.caption2).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(color.opacity(0.1), in: .rect(cornerRadius: 10, style: .continuous))
+    }
+
+    private var bodyCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Body", systemImage: "figure.arms.open")
+                .font(.headline)
+                .foregroundStyle(.cyan)
+            HStack {
+                if let weight = health.bodyComposition.weightKg {
+                    bodyStat(value: Measurement(value: weight.value, unit: UnitMass.kilograms)
+                                .formatted(.measurement(width: .abbreviated, usage: .personWeight)),
+                             label: "Weight", date: weight.date)
+                }
+                if let fat = health.bodyComposition.bodyFatFraction {
+                    bodyStat(value: String(format: "%.1f%%", fat.value * 100),
+                             label: "Body fat", date: fat.date)
+                }
+                if let lean = health.bodyComposition.leanMassKg {
+                    bodyStat(value: Measurement(value: lean.value, unit: UnitMass.kilograms)
+                                .formatted(.measurement(width: .abbreviated, usage: .personWeight)),
+                             label: "Lean mass", date: lean.date)
+                }
+            }
+            Text("Latest measurements from Apple Health (e.g. Hume BodyPod)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+    }
+
+    private func bodyStat(value: String, label: String, date: Date) -> some View {
+        VStack(spacing: 4) {
+            Text(value).font(.headline).monospacedDigit()
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+            Text(date.dayLabel).font(.caption2).foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(Color.cyan.opacity(0.08), in: .rect(cornerRadius: 10, style: .continuous))
     }
 
     private var dayPicker: some View {
@@ -131,6 +224,9 @@ struct NutritionView: View {
                 .swipeActions { } // keep row tappable in ScrollView context
                 .contextMenu {
                     Button(role: .destructive) {
+                        if let uuid = meal.healthKitUUID {
+                            Task { await HealthKitService.shared.deleteMeal(uuid: uuid) }
+                        }
                         context.delete(meal)
                         try? context.save()
                     } label: { Label("Delete", systemImage: "trash") }
@@ -194,13 +290,20 @@ struct MealEditorView: View {
     private func save() {
         let date = Calendar.current.isDateInToday(day) ? Date.now
             : Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: day) ?? day
-        context.insert(Meal(name: name, mealType: mealType,
-                            calories: Int(calories) ?? 0,
-                            protein: Double(protein) ?? 0,
-                            carbs: Double(carbs) ?? 0,
-                            fat: Double(fat) ?? 0,
-                            date: date))
+        let meal = Meal(name: name, mealType: mealType,
+                        calories: Int(calories) ?? 0,
+                        protein: Double(protein) ?? 0,
+                        carbs: Double(carbs) ?? 0,
+                        fat: Double(fat) ?? 0,
+                        date: date)
+        context.insert(meal)
         try? context.save()
+        Task { @MainActor in
+            meal.healthKitUUID = await HealthKitService.shared.logMeal(
+                name: meal.name, calories: meal.calories, protein: meal.protein,
+                carbs: meal.carbs, fat: meal.fat, date: meal.date)
+            try? context.save()
+        }
         dismiss()
     }
 }

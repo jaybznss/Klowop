@@ -17,6 +17,10 @@ targets:
       - Klowop
     dependencies:
       - package: LinkKit
+    entitlements:
+      path: Klowop/Klowop.entitlements
+      properties:
+        com.apple.developer.healthkit: true
     settings:
       base:
         SWIFT_VERSION: "5.9"
@@ -33,6 +37,12 @@ targets:
           - UIInterfaceOrientationPortrait
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        NSHealthShareUsageDescription: >-
+          Klowop reads your Apple Watch activity and body composition
+          (weight, body fat, lean mass) to show them alongside your food log.
+        NSHealthUpdateUsageDescription: >-
+          Klowop saves the meals you log to Apple Health so your nutrition
+          data stays in one place.
         # Replace YOUR_GOOGLE_CLIENT_ID with the reversed Google OAuth client id,
         # e.g. com.googleusercontent.apps.1234567890-abcdef (see SETUP.md step 3)
         CFBundleURLTypes:

@@ -5,7 +5,9 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @State private var settings = AppSettings.shared
     @State private var google = GoogleCalendarService.shared
+    @State private var health = HealthKitService.shared
     @State private var googleError: String?
+    @State private var healthError: String?
 
     var body: some View {
         Form {
@@ -21,6 +23,32 @@ struct SettingsView: View {
                 Text("Assistant")
             } footer: {
                 Text("Powers the secretary chat. Create a key at console.anthropic.com — see SETUP.md step 2.")
+            }
+
+            Section {
+                if !HealthKitService.isAvailable {
+                    Text("Apple Health isn't available on this device.")
+                        .foregroundStyle(.secondary)
+                } else if health.isEnabled {
+                    LabeledContent("Status") {
+                        Label("Connected", systemImage: "heart.fill")
+                            .foregroundStyle(.pink)
+                    }
+                } else {
+                    Button("Connect Apple Health") {
+                        Task {
+                            do { try await health.requestAuthorization() }
+                            catch { healthError = error.localizedDescription }
+                        }
+                    }
+                }
+                if let healthError {
+                    Text(healthError).font(.caption).foregroundStyle(.red)
+                }
+            } header: {
+                Text("Apple Health")
+            } footer: {
+                Text("Meals you log are saved to Apple Health. Activity from your Apple Watch and body composition from smart scales (e.g. Hume BodyPod) show up in the Food tab and are visible to the assistant.")
             }
 
             Section {

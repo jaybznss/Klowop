@@ -80,6 +80,11 @@ enum AssistantTools {
                  "Get account balances, recent transactions, and active subscriptions. Call this when the user asks about money, spending, or subscriptions.",
                  properties: [:],
                  required: []),
+
+            tool("get_health_summary",
+                 "Get Apple Health data: today's Apple Watch activity (active calories burned, steps, exercise minutes) and the latest body composition (weight, body fat, lean mass from a smart scale). Call this when the user asks about workouts, calories burned, weight, or body composition.",
+                 properties: ["date": str("Day for the activity numbers, ISO 8601. Omit for today.")],
+                 required: []),
         ]
     }
 
@@ -103,7 +108,7 @@ enum AssistantTools {
     // MARK: - Execution
 
     @MainActor
-    static func execute(name: String, input: [String: Any], context: ModelContext) -> String {
+    static func execute(name: String, input: [String: Any], context: ModelContext) async -> String {
         do {
             switch name {
             case "add_calendar_event": return try addCalendarEvent(input, context)
@@ -111,9 +116,10 @@ enum AssistantTools {
             case "add_todo": return try addTodo(input, context)
             case "complete_todo": return try completeTodo(input, context)
             case "list_todos": return try listTodos(input, context)
-            case "log_meal": return try logMeal(input, context)
+            case "log_meal": return try await logMeal(input, context)
             case "get_nutrition_summary": return try nutritionSummary(input, context)
             case "get_finance_overview": return try financeOverview(context)
+            case "get_health_summary": return await healthSummary(input)
             default: return "Error: unknown tool \(name)"
             }
         } catch {
@@ -192,7 +198,7 @@ enum AssistantTools {
     }
 
     @MainActor
-    private static func logMeal(_ input: [String: Any], _ context: ModelContext) throws -> String {
+    private static func logMeal(_ input: [String: Any], _ context: ModelContext) async throws -> String {
         guard let name = input["name"] as? String,
               let mealType = input["meal_type"] as? String,
               let calories = input["calories"] as? Int else {
@@ -203,9 +209,46 @@ enum AssistantTools {
                         carbs: (input["carbs"] as? Double) ?? 0,
                         fat: (input["fat"] as? Double) ?? 0,
                         date: parseDate(input["date"]) ?? .now)
+        meal.healthKitUUID = await HealthKitService.shared.logMeal(
+            name: name, calories: calories, protein: meal.protein,
+            carbs: meal.carbs, fat: meal.fat, date: meal.date)
         context.insert(meal)
         try context.save()
-        return "Logged \(name) (\(calories) kcal) as \(mealType)."
+        let healthNote = meal.healthKitUUID != nil ? " Saved to Apple Health too." : ""
+        return "Logged \(name) (\(calories) kcal) as \(mealType).\(healthNote)"
+    }
+
+    @MainActor
+    private static func healthSummary(_ input: [String: Any]) async -> String {
+        let health = HealthKitService.shared
+        guard health.isEnabled else {
+            return "Apple Health isn't connected yet. The user can connect it in Settings → Apple Health."
+        }
+        await health.refresh(day: parseDate(input["date"]) ?? .now)
+        var out = "Activity:\n"
+        if let activity = health.activity {
+            out += "  - Active energy burned: \(Int(activity.activeEnergy)) kcal\n"
+            out += "  - Steps: \(Int(activity.steps))\n"
+            out += "  - Exercise: \(Int(activity.exerciseMinutes)) min\n"
+        } else {
+            out += "  (no activity data)\n"
+        }
+        out += "Body composition (latest measurements):\n"
+        let body = health.bodyComposition
+        if body.isEmpty {
+            out += "  (no body data — a smart scale like the Hume BodyPod syncs this via Apple Health)"
+        } else {
+            if let weight = body.weightKg {
+                out += "  - Weight: \(String(format: "%.1f", weight.value)) kg (\(weight.date.formatted(date: .abbreviated, time: .omitted)))\n"
+            }
+            if let fat = body.bodyFatFraction {
+                out += "  - Body fat: \(String(format: "%.1f", fat.value * 100))% (\(fat.date.formatted(date: .abbreviated, time: .omitted)))\n"
+            }
+            if let lean = body.leanMassKg {
+                out += "  - Lean mass: \(String(format: "%.1f", lean.value)) kg (\(lean.date.formatted(date: .abbreviated, time: .omitted)))"
+            }
+        }
+        return out
     }
 
     @MainActor
