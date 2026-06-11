@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Charts
 
 struct NutritionView: View {
     @Environment(\.modelContext) private var context
@@ -7,6 +8,7 @@ struct NutritionView: View {
     @State private var showingEditor = false
     @State private var settings = AppSettings.shared
     @State private var health = HealthKitService.shared
+    @State private var weightHistory: [HealthKitService.HistorySample] = []
     @Query(sort: \Meal.date) private var allMeals: [Meal]
 
     private var dayMeals: [Meal] {
@@ -27,6 +29,7 @@ struct NutritionView: View {
                 VStack(spacing: 16) {
                     dayPicker
                     summaryCard
+                    weeklyCaloriesCard
                     if health.isEnabled {
                         activityCard
                         if !health.bodyComposition.isEmpty { bodyCard }
@@ -54,12 +57,69 @@ struct NutritionView: View {
                 }
             }
             .sheet(isPresented: $showingEditor) { MealEditorView(day: selectedDay) }
-            .task { await health.refresh(day: selectedDay) }
+            .task {
+                await health.refresh(day: selectedDay)
+                weightHistory = await health.weightHistory()
+            }
             .onChange(of: selectedDay) {
                 Task { await health.refresh(day: selectedDay) }
             }
-            .refreshable { await health.refresh(day: selectedDay) }
+            .refreshable {
+                await health.refresh(day: selectedDay)
+                weightHistory = await health.weightHistory()
+            }
+            .animation(.smooth, value: calories)
+            .sensoryFeedback(.increase, trigger: allMeals.count)
         }
+    }
+
+    // MARK: - Weekly calories chart
+
+    private struct DayCalories: Identifiable {
+        let id: Date
+        let day: Date
+        let calories: Int
+    }
+
+    private var weekData: [DayCalories] {
+        (0..<7).reversed().map { offset in
+            let day = Calendar.current.startOfDay(for: Calendar.current.date(byAdding: .day, value: -offset, to: selectedDay)!)
+            let end = Calendar.current.date(byAdding: .day, value: 1, to: day)!
+            let total = allMeals.filter { $0.date >= day && $0.date < end }.reduce(0) { $0 + $1.calories }
+            return DayCalories(id: day, day: day, calories: total)
+        }
+    }
+
+    private var weeklyCaloriesCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Last 7 days", systemImage: "chart.bar.fill")
+                .font(.headline)
+                .foregroundStyle(Theme.nutrition)
+            Chart(weekData) { entry in
+                BarMark(
+                    x: .value("Day", entry.day, unit: .day),
+                    y: .value("kcal", entry.calories)
+                )
+                .foregroundStyle(
+                    Calendar.current.isDate(entry.day, inSameDayAs: selectedDay)
+                        ? Theme.nutrition.gradient
+                        : Theme.nutrition.opacity(0.35).gradient
+                )
+                .cornerRadius(4)
+
+                RuleMark(y: .value("Goal", settings.dailyCalorieGoal))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .foregroundStyle(.secondary)
+            }
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .day)) { _ in
+                    AxisValueLabel(format: .dateTime.weekday(.narrow))
+                }
+            }
+            .frame(height: 130)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
     }
 
     // MARK: - Apple Health cards
@@ -126,6 +186,27 @@ struct NutritionView: View {
                              label: "Lean mass", date: lean.date)
                 }
             }
+            if weightHistory.count >= 2 {
+                Chart(weightHistory) { sample in
+                    LineMark(
+                        x: .value("Date", sample.date),
+                        y: .value("Weight", sample.value)
+                    )
+                    .interpolationMethod(.catmullRom)
+                    .foregroundStyle(Color.cyan.gradient)
+                    AreaMark(
+                        x: .value("Date", sample.date),
+                        y: .value("Weight", sample.value)
+                    )
+                    .interpolationMethod(.catmullRom)
+                    .foregroundStyle(
+                        LinearGradient(colors: [.cyan.opacity(0.25), .clear],
+                                       startPoint: .top, endPoint: .bottom)
+                    )
+                }
+                .chartYScale(domain: .automatic(includesZero: false))
+                .frame(height: 110)
+            }
             Text("Latest measurements from Apple Health (e.g. Hume BodyPod)")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
@@ -168,6 +249,7 @@ struct NutritionView: View {
                     Text("\(calories)")
                         .font(.system(size: 40, weight: .bold, design: .rounded))
                         .monospacedDigit()
+                        .contentTransition(.numericText(value: Double(calories)))
                     Text("of \(settings.dailyCalorieGoal) kcal")
                         .font(.caption)
                         .foregroundStyle(.secondary)

@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Charts
 
 struct FinancesView: View {
     @Environment(\.modelContext) private var context
@@ -20,6 +21,7 @@ struct FinancesView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     netWorthCard
+                    if !transactions.isEmpty { spendingChartCard }
                     accountsCard
                     subscriptionsTeaser
                     transactionsCard
@@ -50,6 +52,8 @@ struct FinancesView: View {
             Text(netWorth.asCurrency())
                 .font(.system(size: 38, weight: .bold, design: .rounded))
                 .monospacedDigit()
+                .contentTransition(.numericText(value: netWorth))
+                .animation(.smooth, value: netWorth)
             if let status = plaid.statusMessage {
                 Text(status).font(.caption).foregroundStyle(.secondary)
             }
@@ -66,6 +70,52 @@ struct FinancesView: View {
             .buttonStyle(.borderedProminent)
             .tint(Theme.finance)
             .padding(.top, 6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+    }
+
+    // MARK: - Spending chart
+
+    private struct DaySpend: Identifiable {
+        let id: Date
+        let day: Date
+        let amount: Double
+    }
+
+    private var spendingByDay: [DaySpend] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: .now)
+        return (0..<30).reversed().map { offset in
+            let day = calendar.date(byAdding: .day, value: -offset, to: today)!
+            let end = calendar.date(byAdding: .day, value: 1, to: day)!
+            let total = transactions
+                .filter { $0.date >= day && $0.date < end && $0.amount > 0 }
+                .reduce(0) { $0 + $1.amount }
+            return DaySpend(id: day, day: day, amount: total)
+        }
+    }
+
+    private var spendingChartCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Spending · last 30 days", systemImage: "chart.bar.fill")
+                .font(.headline)
+                .foregroundStyle(Theme.finance)
+            Chart(spendingByDay) { entry in
+                BarMark(
+                    x: .value("Day", entry.day, unit: .day),
+                    y: .value("Spent", entry.amount)
+                )
+                .foregroundStyle(Theme.finance.gradient)
+                .cornerRadius(2)
+            }
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .day, count: 7)) { _ in
+                    AxisGridLine()
+                    AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                }
+            }
+            .frame(height: 130)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .card()

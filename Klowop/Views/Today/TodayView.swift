@@ -12,6 +12,7 @@ struct TodayView: View {
 
     @State private var settings = AppSettings.shared
     @State private var newTodoTitle = ""
+    @State private var completedTodoCount = 0
 
     init() {
         let start = Calendar.current.startOfDay(for: .now)
@@ -45,6 +46,11 @@ struct TodayView: View {
             }
             .navigationTitle("Today")
             .background(Color(.systemGroupedBackground))
+            .animation(.snappy, value: openTodos.count)
+            .sensoryFeedback(.success, trigger: completedTodoCount)
+            .sensoryFeedback(.impact(flexibility: .soft), trigger: openTodos.count) { old, new in
+                new > old // gentle tap when a todo is added
+            }
         }
     }
 
@@ -93,6 +99,7 @@ struct TodayView: View {
             Text(value)
                 .font(.title2.weight(.bold))
                 .monospacedDigit()
+                .contentTransition(.numericText())
             Text(detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -142,7 +149,10 @@ struct TodayView: View {
                 .foregroundStyle(Theme.assistant)
             ForEach(openTodos.prefix(8)) { todo in
                 Button {
-                    todo.isDone = true
+                    withAnimation(.snappy) {
+                        todo.isDone = true
+                        completedTodoCount += 1
+                    }
                     try? context.save()
                 } label: {
                     HStack {

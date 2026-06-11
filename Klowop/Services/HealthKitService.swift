@@ -100,6 +100,34 @@ final class HealthKitService {
         }
     }
 
+    struct HistorySample: Identifiable {
+        let id = UUID()
+        let date: Date
+        let value: Double
+    }
+
+    /// Historical samples for trend charts (e.g. weight over the last 90 days).
+    func history(_ id: HKQuantityTypeIdentifier, unit: HKUnit, days: Int = 90) async -> [HistorySample] {
+        guard isEnabled, Self.isAvailable else { return [] }
+        let start = Calendar.current.date(byAdding: .day, value: -days, to: .now)!
+        return await withCheckedContinuation { continuation in
+            let predicate = HKQuery.predicateForSamples(withStart: start, end: nil, options: [])
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+            let query = HKSampleQuery(sampleType: Self.quantity(id), predicate: predicate,
+                                      limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, _ in
+                let history = (samples as? [HKQuantitySample] ?? []).map {
+                    HistorySample(date: $0.startDate, value: $0.quantity.doubleValue(for: unit))
+                }
+                continuation.resume(returning: history)
+            }
+            store.execute(query)
+        }
+    }
+
+    func weightHistory(days: Int = 90) async -> [HistorySample] {
+        await history(.bodyMass, unit: .gramUnit(with: .kilo), days: days)
+    }
+
     private func latest(_ id: HKQuantityTypeIdentifier, unit: HKUnit) async -> (Double, Date)? {
         await withCheckedContinuation { continuation in
             let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)

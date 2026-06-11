@@ -63,6 +63,8 @@ struct AgendaView: View {
             }
             .sheet(isPresented: $showingEditor) { EventEditorView(event: nil) }
             .sheet(item: $editingEvent) { EventEditorView(event: $0) }
+            .animation(.snappy, value: events.count)
+            .sensoryFeedback(.success, trigger: google.lastSyncDate)
             .task {
                 if google.isConnected { await google.sync(context: context) }
             }

@@ -22,14 +22,19 @@ struct AssistantView: View {
                                 bubble(for: message).id(message.persistentModelID)
                             }
                             if assistant.isThinking {
-                                HStack {
-                                    ProgressView()
-                                    Text("Working on it…")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
+                                if assistant.streamingText.isEmpty {
+                                    HStack {
+                                        ProgressView()
+                                        Text("Working on it…")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal)
+                                    .transition(.opacity)
+                                } else {
+                                    streamingBubble.id("streaming")
                                 }
-                                .padding(.horizontal)
                             }
                             if let errorMessage {
                                 Text(errorMessage)
@@ -45,8 +50,16 @@ struct AssistantView: View {
                             withAnimation { proxy.scrollTo(last.persistentModelID, anchor: .bottom) }
                         }
                     }
+                    .onChange(of: assistant.streamingText) {
+                        proxy.scrollTo("streaming", anchor: .bottom)
+                    }
                 }
                 inputBar
+            }
+            .animation(.snappy, value: messages.count)
+            .animation(.smooth, value: assistant.isThinking)
+            .sensoryFeedback(.success, trigger: messages.count) { old, new in
+                new > old && messages.last?.role == "assistant"
             }
             .navigationTitle("Assistant")
             .navigationBarTitleDisplayMode(.inline)
@@ -78,6 +91,18 @@ struct AssistantView: View {
         .padding(.top, 60)
     }
 
+    private var streamingBubble: some View {
+        HStack {
+            Text(LocalizedStringKey(assistant.streamingText))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.background.secondary, in: .rect(cornerRadius: 18, style: .continuous))
+            Spacer(minLength: 48)
+        }
+        .padding(.horizontal)
+        .transition(.opacity)
+    }
+
     private func bubble(for message: ChatMessage) -> some View {
         HStack {
             if message.role == "user" { Spacer(minLength: 48) }
@@ -92,6 +117,7 @@ struct AssistantView: View {
             if message.role != "user" { Spacer(minLength: 48) }
         }
         .padding(.horizontal)
+        .transition(.push(from: .bottom).combined(with: .opacity))
     }
 
     private var inputBar: some View {

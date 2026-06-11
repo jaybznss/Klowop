@@ -13,6 +13,9 @@ final class ClaudeAssistantService {
     static let shared = ClaudeAssistantService()
 
     var isThinking = false
+    /// Text streamed token-by-token for the current turn, so the UI can render
+    /// the reply as it's written instead of waiting for the full message.
+    var streamingText = ""
 
     private let model = "claude-opus-4-8"
     private let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
@@ -43,7 +46,11 @@ final class ClaudeAssistantService {
             throw AssistantError.missingAPIKey
         }
         isThinking = true
-        defer { isThinking = false }
+        streamingText = ""
+        defer {
+            isThinking = false
+            streamingText = ""
+        }
 
         conversation.append(["role": "user", "content": userText])
 
@@ -110,6 +117,10 @@ final class ClaudeAssistantService {
         """
     }
 
+    /// Streams one API turn over SSE. Text deltas are appended to `streamingText`
+    /// for live display, while the full content blocks (thinking, text, tool_use)
+    /// are reconstructed verbatim so the tool loop can echo them back exactly.
+    @MainActor
     private func requestMessage() async throws -> [String: Any] {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
@@ -121,6 +132,7 @@ final class ClaudeAssistantService {
         let body: [String: Any] = [
             "model": model,
             "max_tokens": 16000,
+            "stream": true,
             "thinking": ["type": "adaptive"],
             "system": systemPrompt(),
             "tools": AssistantTools.definitions,
@@ -128,17 +140,83 @@ final class ClaudeAssistantService {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw AssistantError.badResponse("No HTTP response.")
         }
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw AssistantError.badResponse("Could not decode API response.")
-        }
         guard http.statusCode == 200 else {
-            let message = (json["error"] as? [String: Any])?["message"] as? String ?? "HTTP \(http.statusCode)"
+            var errorData = Data()
+            for try await byte in bytes { errorData.append(byte) }
+            let json = (try? JSONSerialization.jsonObject(with: errorData)) as? [String: Any]
+            let message = (json?["error"] as? [String: Any])?["message"] as? String ?? "HTTP \(http.statusCode)"
             throw AssistantError.badResponse(message)
         }
-        return json
+
+        var blocks: [[String: Any]] = []
+        var partialToolInputJSON: [Int: String] = [:]
+        var stopReason = "end_turn"
+
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data: "),
+                  let data = line.dropFirst(6).data(using: .utf8),
+                  let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = event["type"] as? String else { continue }
+
+            switch type {
+            case "content_block_start":
+                guard let index = event["index"] as? Int,
+                      var block = event["content_block"] as? [String: Any] else { continue }
+                if (block["type"] as? String) == "tool_use" { block["input"] = [String: Any]() }
+                while blocks.count <= index { blocks.append([:]) }
+                blocks[index] = block
+
+            case "content_block_delta":
+                guard let index = event["index"] as? Int, index < blocks.count,
+                      let delta = event["delta"] as? [String: Any],
+                      let deltaType = delta["type"] as? String else { continue }
+                switch deltaType {
+                case "text_delta":
+                    let text = delta["text"] as? String ?? ""
+                    blocks[index]["text"] = (blocks[index]["text"] as? String ?? "") + text
+                    streamingText += text
+                case "thinking_delta":
+                    blocks[index]["thinking"] = (blocks[index]["thinking"] as? String ?? "")
+                        + (delta["thinking"] as? String ?? "")
+                case "signature_delta":
+                    blocks[index]["signature"] = (blocks[index]["signature"] as? String ?? "")
+                        + (delta["signature"] as? String ?? "")
+                case "input_json_delta":
+                    partialToolInputJSON[index, default: ""] += delta["partial_json"] as? String ?? ""
+                default:
+                    break
+                }
+
+            case "content_block_stop":
+                guard let index = event["index"] as? Int, index < blocks.count else { continue }
+                if let jsonString = partialToolInputJSON[index], !jsonString.isEmpty,
+                   let jsonData = jsonString.data(using: .utf8),
+                   let input = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+                    blocks[index]["input"] = input
+                }
+
+            case "message_delta":
+                if let delta = event["delta"] as? [String: Any],
+                   let reason = delta["stop_reason"] as? String {
+                    stopReason = reason
+                }
+
+            case "error":
+                let message = (event["error"] as? [String: Any])?["message"] as? String ?? "stream error"
+                throw AssistantError.badResponse(message)
+
+            default:
+                break // message_start, message_stop, ping
+            }
+        }
+
+        // Between tool rounds, keep streamed narration visible with a separator.
+        if !streamingText.isEmpty { streamingText += "\n" }
+
+        return ["content": blocks, "stop_reason": stopReason]
     }
 }
