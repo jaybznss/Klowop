@@ -39,6 +39,14 @@ enum AssistantTools {
                  ],
                  required: ["from", "to"]),
 
+            tool("delete_calendar_event",
+                 "Delete agenda events by title (case-insensitive contains match), optionally limited to one day. Use this to remove duplicates or cancelled plans. Synced Google Calendar copies are removed too.",
+                 properties: [
+                    "title": str("Title (or part of it) of the event(s) to delete"),
+                    "date": str("Optional: only delete events on this day, ISO 8601"),
+                 ],
+                 required: ["title"]),
+
             tool("add_todo",
                  "Add an item to the user's to-do lists. Call this when the user asks to remember, buy, or do something without a fixed time.",
                  properties: [
@@ -113,6 +121,7 @@ enum AssistantTools {
             switch name {
             case "add_calendar_event": return try addCalendarEvent(input, context)
             case "list_calendar_events": return try listCalendarEvents(input, context)
+            case "delete_calendar_event": return try await deleteCalendarEvent(input, context)
             case "add_todo": return try addTodo(input, context)
             case "complete_todo": return try completeTodo(input, context)
             case "list_todos": return try listTodos(input, context)
@@ -156,6 +165,32 @@ enum AssistantTools {
         return events.map {
             "- \($0.title): \($0.startDate.formatted(date: .abbreviated, time: .shortened)) to \($0.endDate.formatted(date: .omitted, time: .shortened))\($0.location.map { " at \($0)" } ?? "")"
         }.joined(separator: "\n")
+    }
+
+    @MainActor
+    private static func deleteCalendarEvent(_ input: [String: Any], _ context: ModelContext) async throws -> String {
+        guard let title = (input["title"] as? String)?.lowercased(), !title.isEmpty else {
+            return "Error: title is required."
+        }
+        var matches = try context.fetch(FetchDescriptor<CalendarEvent>())
+            .filter { $0.title.lowercased().contains(title) }
+        if let day = parseDate(input["date"]) {
+            let start = Calendar.current.startOfDay(for: day)
+            let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!
+            matches = matches.filter { $0.startDate >= start && $0.startDate < end }
+        }
+        guard !matches.isEmpty else { return "No events matching '\(title)'." }
+
+        var deleted: [String] = []
+        for event in matches {
+            if let googleID = event.googleEventID {
+                await GoogleCalendarService.shared.deleteRemoteEvent(id: googleID)
+            }
+            deleted.append("\(event.title) — \(event.startDate.formatted(date: .abbreviated, time: .shortened))")
+            context.delete(event)
+        }
+        try context.save()
+        return "Deleted \(deleted.count) event(s):\n" + deleted.map { "- \($0)" }.joined(separator: "\n")
     }
 
     @MainActor

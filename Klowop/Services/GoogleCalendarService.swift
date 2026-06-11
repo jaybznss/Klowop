@@ -168,6 +168,12 @@ final class GoogleCalendarService: NSObject, ASWebAuthenticationPresentationCont
         }
     }
 
+    /// Best-effort removal of an event from Google when it's deleted locally.
+    func deleteRemoteEvent(id: String) async {
+        guard isConnected else { return }
+        _ = try? await calendarRequest("DELETE", path: "events/\(id)")
+    }
+
     @MainActor
     private func pushLocalChanges(context: ModelContext) async throws {
         let pending = try context.fetch(FetchDescriptor<CalendarEvent>(

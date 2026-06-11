@@ -29,7 +29,13 @@ struct AgendaView: View {
                                 .buttonStyle(.plain)
                         }
                         .onDelete { offsets in
-                            for index in offsets { context.delete(group.events[index]) }
+                            for index in offsets {
+                                let event = group.events[index]
+                                if let googleID = event.googleEventID {
+                                    Task { await google.deleteRemoteEvent(id: googleID) }
+                                }
+                                context.delete(event)
+                            }
                             try? context.save()
                         }
                     }

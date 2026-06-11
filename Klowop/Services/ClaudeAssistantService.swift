@@ -103,7 +103,11 @@ final class ClaudeAssistantService {
     }
 
     private func systemPrompt() -> String {
-        let now = ISO8601DateFormatter().string(from: .now)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        formatter.timeZone = .current
+        let now = formatter.string(from: .now)
+        let weekday = Date.now.formatted(.dateTime.weekday(.wide))
         let name = AppSettings.shared.userName
         return """
         You are Klowop, \(name.isEmpty ? "the user" : name)'s personal secretary inside their life-management iPhone app. \
@@ -112,8 +116,8 @@ final class ClaudeAssistantService {
         When the user mentions plans, food, or purchases in passing, offer to log or schedule them. \
         Always use tools to read or change data instead of guessing. \
         When creating events or todos from vague times ("tomorrow afternoon"), pick a sensible concrete time and mention it. \
-        The current date and time is \(now) (the user's local timezone). \
-        Use ISO 8601 date-times with the timezone offset from the current time when calling tools.
+        It is now \(now) (\(weekday), the user's local time — trust this exactly). \
+        Use ISO 8601 date-times with this same timezone offset when calling tools.
         """
     }
 
