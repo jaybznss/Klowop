@@ -274,7 +274,11 @@ final class GoogleCalendarService: NSObject, ASWebAuthenticationPresentationCont
     }
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
-        return scene?.keyWindow ?? ASPresentationAnchor()
+        // Sign-in is always triggered from the foreground UI, so a window scene exists.
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+            ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
+        return scene.keyWindow ?? ASPresentationAnchor(windowScene: scene)
     }
 }
