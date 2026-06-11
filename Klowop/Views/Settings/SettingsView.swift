@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var settings = AppSettings.shared
     @State private var google = GoogleCalendarService.shared
     @State private var health = HealthKitService.shared
+    @State private var notifications = NotificationService.shared
     @State private var googleError: String?
     @State private var healthError: String?
 
@@ -15,6 +16,22 @@ struct SettingsView: View {
                 TextField("Your name", text: $settings.userName)
                 Stepper("Daily calorie goal: \(settings.dailyCalorieGoal)",
                         value: $settings.dailyCalorieGoal, in: 1000...5000, step: 50)
+            }
+
+            Section {
+                if notifications.isEnabled {
+                    LabeledContent("Reminders") {
+                        Label("On", systemImage: "bell.fill").foregroundStyle(.orange)
+                    }
+                } else {
+                    Button("Enable event & renewal reminders") {
+                        Task { await notifications.requestAuthorization() }
+                    }
+                }
+            } header: {
+                Text("Notifications")
+            } footer: {
+                Text("30 minutes before events, and the day before a subscription renews.")
             }
 
             Section {

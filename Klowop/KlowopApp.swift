@@ -21,9 +21,13 @@ struct KlowopApp: App {
         }
         .modelContainer(container)
         .onChange(of: scenePhase) { _, phase in
-            // Keep home-screen widgets in sync whenever the app leaves the foreground.
+            // Keep widgets and reminders in sync whenever the app leaves the foreground.
             if phase == .background || phase == .inactive {
                 WidgetCenter.shared.reloadAllTimelines()
+                Task { @MainActor in
+                    await NotificationService.shared.rescheduleAll(
+                        context: container.mainContext)
+                }
             }
         }
     }

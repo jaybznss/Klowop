@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct RootTabView: View {
+    @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "has_onboarded")
+
     var body: some View {
         TabView {
             Tab("Today", systemImage: "sun.max.fill") {
@@ -21,6 +23,9 @@ struct RootTabView: View {
         }
         // Liquid Glass: let the floating tab bar shrink away while scrolling content.
         .tabBarMinimizeBehavior(.onScrollDown)
+        .fullScreenCover(isPresented: $showOnboarding) {
+            OnboardingView(isPresented: $showOnboarding)
+        }
     }
 }
 
