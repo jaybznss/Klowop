@@ -11,9 +11,17 @@ enum AppGroup {
     }
 
     static func makeModelContainer() throws -> ModelContainer {
-        let configuration = ModelConfiguration("Klowop", schema: schema,
-                                               groupContainer: .identifier(id))
-        return try ModelContainer(for: schema, configurations: [configuration])
+        // Prefer the shared app-group store (lets the widget read the same data),
+        // but fall back to a local store rather than crashing if the App Group
+        // entitlement isn't provisioned on this signing identity yet.
+        do {
+            let shared = ModelConfiguration("Klowop", schema: schema,
+                                            groupContainer: .identifier(id))
+            return try ModelContainer(for: schema, configurations: [shared])
+        } catch {
+            let local = ModelConfiguration("KlowopLocal", schema: schema)
+            return try ModelContainer(for: schema, configurations: [local])
+        }
     }
 }
 
