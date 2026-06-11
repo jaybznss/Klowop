@@ -1,6 +1,6 @@
 # Klowop Setup Guide
 
-Four steps. You need a Mac with Xcode 15+ for step 1. Each integration is independent — the app works before any keys are added, and features light up as you configure them in the app's **Settings** (gear icon in the Assistant tab).
+Six steps. You need a Mac with **Xcode 26 or newer** (the app targets iOS 26+ and uses Liquid Glass APIs; for an iPhone on an iOS 27 beta, install the matching Xcode beta). Each integration is independent — the app works before any keys are added, and features light up as you configure them in the app's **Settings** (gear icon in the Assistant tab).
 
 ---
 

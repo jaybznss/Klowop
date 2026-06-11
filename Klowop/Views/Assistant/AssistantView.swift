@@ -126,19 +126,21 @@ struct AssistantView: View {
                 .lineLimit(1...4)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
-                .background(.background.secondary, in: .capsule)
+                .glassEffect(.regular, in: .capsule)
                 .focused($inputFocused)
                 .onSubmit(send)
             Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(canSend ? Theme.assistant : Color.secondary)
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 38, height: 38)
             }
+            .buttonStyle(.glassProminent)
+            .buttonBorderShape(.circle)
+            .tint(Theme.assistant)
             .disabled(!canSend)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
-        .background(.bar)
     }
 
     private var canSend: Bool {

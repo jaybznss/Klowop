@@ -67,7 +67,7 @@ struct FinancesView: View {
                       systemImage: "building.columns")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .tint(Theme.finance)
             .padding(.top, 6)
         }

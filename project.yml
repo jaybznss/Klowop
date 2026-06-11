@@ -2,7 +2,7 @@ name: Klowop
 options:
   bundleIdPrefix: com.jaybznss
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "26.0"
 
 packages:
   LinkKit:
