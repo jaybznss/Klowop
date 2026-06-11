@@ -30,11 +30,11 @@ struct KlowopApp: App {
                     await NotificationService.shared.checkBudgets(
                         context: container.mainContext)
                 }
-                BriefingScheduler.scheduleNext()
+                // NOTE: BGTaskScheduler registration (auto-briefing) is temporarily
+                // disabled — its launch-time XPC registration crashes on iOS 27
+                // beta 1 when built with the iOS 26.4 SDK. Restore alongside
+                // KlowopIntents.swift once building with the Xcode 27 beta.
             }
-        }
-        .backgroundTask(.appRefresh(BriefingScheduler.taskID)) {
-            await BriefingScheduler.runNow()
         }
     }
 }
