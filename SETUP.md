@@ -15,9 +15,7 @@ xcodegen generate
 open Klowop.xcodeproj
 ```
 
-In Xcode: select the **Klowop** scheme, pick your iPhone or a simulator, set your signing team (Signing & Capabilities → Team), and press **Run**. Xcode resolves the Plaid LinkKit Swift package automatically on first build.
-
-> If the LinkKit version pinned in `project.yml` ever fails to resolve, bump the `from:` version — Plaid occasionally retires old majors.
+In Xcode: select the **Klowop** scheme, pick your iPhone or a simulator, set your signing team (Signing & Capabilities → Team), and press **Run**. There are no third-party package dependencies — bank linking uses Plaid Hosted Link in the browser.
 
 ---
 
@@ -64,8 +62,9 @@ Plaid requires a server-side secret, so a small companion server (in `server/`) 
    npm start               # listens on http://localhost:8484
    ```
 
-3. In the app: **Settings → Bank linking** — the default `http://localhost:8484` works in the simulator. On a physical iPhone, use your Mac's LAN address (e.g. `http://192.168.1.20:8484`).
-4. **Money tab → Link a bank account**. In sandbox mode, log in with Plaid's test credentials: username `user_good`, password `pass_good`.
+3. In the Plaid dashboard, enable **Hosted Link** if it isn't already (Team Settings → Link → Hosted Link is available by default on new accounts).
+4. In the app: **Settings → Bank linking** — the default `http://localhost:8484` works in the simulator. On a physical iPhone, use your Mac's LAN address (e.g. `http://192.168.1.20:8484`).
+5. **Money tab → Link a bank account** — this opens Plaid's linking page in your browser. In sandbox mode, log in with Plaid's test credentials: username `user_good`, password `pass_good`. When you return to the app, it completes the link automatically.
 
 Balances, transactions, and detected subscriptions then sync into the Money tab (and the assistant can see them). To connect **real** banks, request Production access in the Plaid dashboard and switch `PLAID_ENV=production` in `.env`.
 
@@ -111,4 +110,4 @@ Widgets refresh whenever you leave the app and roughly every 30 minutes.
 | Google sign-in window closes immediately | The URL scheme in `project.yml` doesn't match your client ID — redo step 3.6 and `xcodegen generate` |
 | "Plaid server: request failed" | Server not running, or wrong URL in Settings (use LAN IP on a real device) |
 | Bank link succeeds but no transactions | Sandbox data can take a few seconds; pull-to-refresh or tap the sync arrows in the Money tab |
-| Build error in `PlaidService.swift` | LinkKit package didn't resolve — File → Packages → Resolve Package Versions |
+| "Waiting for you to finish linking…" never completes | Make sure you finished the flow in the browser, then reopen the app (it checks on foreground). Cancel and retry if needed. |

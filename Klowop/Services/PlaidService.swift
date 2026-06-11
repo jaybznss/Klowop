@@ -2,12 +2,15 @@ import Foundation
 import SwiftData
 import Observation
 import UIKit
-#if canImport(LinkKit)
-import LinkKit
-#endif
 
-/// Bank linking via Plaid. The Plaid secret never lives in the app — the companion
-/// server (see server/ in the repo) creates link tokens and exchanges public tokens.
+/// Bank linking via Plaid **Hosted Link** — the linking UI runs in the browser,
+/// so the app carries no native Plaid binary. The companion server (server/ in
+/// the repo) holds the Plaid secret, creates hosted link sessions, and exchanges
+/// tokens.
+///
+/// Flow: ask the server for a hosted link URL → open it in the browser → the user
+/// links their bank there → back in the app, we ask the server to complete the
+/// session (it fetches the public token and exchanges it) → data syncs.
 @Observable
 final class PlaidService {
     static let shared = PlaidService()
@@ -16,11 +19,14 @@ final class PlaidService {
     var statusMessage: String?
     var lastError: String?
 
-    #if canImport(LinkKit)
-    private var linkHandler: Handler?
-    #endif
+    /// Set while a hosted link session is awaiting completion in the browser.
+    var pendingLinkToken: String? {
+        didSet { UserDefaults.standard.set(pendingLinkToken, forKey: "plaid_pending_link_token") }
+    }
 
-    private init() {}
+    private init() {
+        pendingLinkToken = UserDefaults.standard.string(forKey: "plaid_pending_link_token")
+    }
 
     enum PlaidError: LocalizedError {
         case server(String)
@@ -31,57 +37,49 @@ final class PlaidService {
 
     private var serverURL: String { AppSettings.shared.plaidServerURL }
 
-    // MARK: - Link flow
+    // MARK: - Hosted Link flow
 
+    /// Starts a hosted link session and opens it in the browser.
     @MainActor
     func startLinkFlow(context: ModelContext) async {
         lastError = nil
         do {
             let response = try await post("/api/create_link_token", body: [:])
-            guard let linkToken = response["link_token"] as? String else {
-                throw PlaidError.server("no link_token in response")
+            guard let linkToken = response["link_token"] as? String,
+                  let urlString = response["hosted_link_url"] as? String,
+                  let url = URL(string: urlString) else {
+                throw PlaidError.server("no hosted link URL in response")
             }
-            try presentLink(token: linkToken, context: context)
+            pendingLinkToken = linkToken
+            statusMessage = "Finish linking your bank in the browser, then come back here."
+            await UIApplication.shared.open(url)
         } catch {
             lastError = error.localizedDescription
         }
     }
 
+    /// Called when the app comes back to the foreground (and on screen load):
+    /// if a hosted link session is pending, ask the server whether it completed.
     @MainActor
-    private func presentLink(token: String, context: ModelContext) throws {
-        #if canImport(LinkKit)
-        var configuration = LinkTokenConfiguration(token: token) { [weak self] success in
-            Task { @MainActor in
-                await self?.exchange(publicToken: success.publicToken, context: context)
-            }
-        }
-        configuration.onExit = { [weak self] exit in
-            if let error = exit.error { self?.lastError = error.localizedDescription }
-        }
-        switch Plaid.create(configuration) {
-        case .success(let handler):
-            linkHandler = handler
-            guard let root = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene }).first?
-                .keyWindow?.rootViewController else { return }
-            handler.open(presentUsing: .viewController(root))
-        case .failure(let error):
-            lastError = error.localizedDescription
-        }
-        #else
-        lastError = "LinkKit is not available. Add the plaid-link-ios Swift package (see SETUP.md)."
-        #endif
-    }
-
-    @MainActor
-    private func exchange(publicToken: String, context: ModelContext) async {
+    func completePendingLinkIfNeeded(context: ModelContext) async {
+        guard let token = pendingLinkToken, !isBusy else { return }
         do {
-            _ = try await post("/api/exchange_public_token", body: ["public_token": publicToken])
-            statusMessage = "Bank linked. Fetching data…"
-            try await refreshData(context: context)
+            let response = try await post("/api/complete_hosted_link", body: ["link_token": token])
+            if (response["linked"] as? Bool) == true {
+                pendingLinkToken = nil
+                statusMessage = "Bank linked. Fetching data…"
+                try await refreshData(context: context)
+            }
+            // Not linked yet: the user may still be mid-flow in the browser — keep waiting.
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    @MainActor
+    func cancelPendingLink() {
+        pendingLinkToken = nil
+        statusMessage = nil
     }
 
     // MARK: - Data refresh

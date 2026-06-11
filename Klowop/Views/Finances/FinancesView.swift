@@ -8,6 +8,7 @@ struct FinancesView: View {
     @Query(sort: \MoneyTransaction.date, order: .reverse) private var transactions: [MoneyTransaction]
     @Query(filter: #Predicate<Subscription> { $0.isActive }) private var subscriptions: [Subscription]
     @State private var plaid = PlaidService.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     private var netWorth: Double {
         accounts.reduce(0) { $0 + ($1.type == "credit" ? -$1.balance : $1.balance) }
@@ -41,6 +42,13 @@ struct FinancesView: View {
                     .disabled(plaid.isBusy || accounts.allSatisfy { $0.plaidAccountID == nil })
                 }
             }
+            .task { await plaid.completePendingLinkIfNeeded(context: context) }
+            .onChange(of: scenePhase) { _, phase in
+                // Returning from the browser after a hosted Plaid Link session.
+                if phase == .active {
+                    Task { await plaid.completePendingLinkIfNeeded(context: context) }
+                }
+            }
         }
     }
 
@@ -60,16 +68,29 @@ struct FinancesView: View {
             if let error = plaid.lastError {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
-            Button {
-                Task { await plaid.startLinkFlow(context: context) }
-            } label: {
-                Label(accounts.isEmpty ? "Link a bank account" : "Link another account",
-                      systemImage: "building.columns")
-                    .frame(maxWidth: .infinity)
+            if plaid.pendingLinkToken != nil {
+                HStack {
+                    ProgressView()
+                    Text("Waiting for you to finish linking in the browser…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Cancel") { plaid.cancelPendingLink() }
+                        .font(.caption)
+                }
+                .padding(.top, 6)
+            } else {
+                Button {
+                    Task { await plaid.startLinkFlow(context: context) }
+                } label: {
+                    Label(accounts.isEmpty ? "Link a bank account" : "Link another account",
+                          systemImage: "building.columns")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(Theme.finance)
+                .padding(.top, 6)
             }
-            .buttonStyle(.glassProminent)
-            .tint(Theme.finance)
-            .padding(.top, 6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .card()

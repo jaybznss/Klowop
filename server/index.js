@@ -42,7 +42,8 @@ app.use(express.json());
 
 app.get('/', (_req, res) => res.json({ ok: true, service: 'klowop-server' }));
 
-// 1. The app asks for a link token to open Plaid Link.
+// 1. The app asks for a Hosted Link session — Plaid's linking UI runs in the
+//    browser, so the iOS app needs no native Plaid SDK.
 app.post('/api/create_link_token', async (_req, res) => {
   try {
     const response = await plaid.linkTokenCreate({
@@ -51,29 +52,45 @@ app.post('/api/create_link_token', async (_req, res) => {
       products: ['transactions'],
       country_codes: (process.env.PLAID_COUNTRY_CODES || 'US').split(','),
       language: 'en',
+      hosted_link: {},
     });
-    res.json({ link_token: response.data.link_token });
+    res.json({
+      link_token: response.data.link_token,
+      hosted_link_url: response.data.hosted_link_url,
+    });
   } catch (err) {
     fail(res, err);
   }
 });
 
-// 2. After the user links a bank, the app sends the public token here.
-app.post('/api/exchange_public_token', async (req, res) => {
+// 2. After the user finishes in the browser, the app asks us to complete the
+//    session: fetch the session result, exchange the public token, store the item.
+app.post('/api/complete_hosted_link', async (req, res) => {
   try {
-    const { public_token } = req.body;
-    if (!public_token) return res.status(400).json({ error: 'public_token required' });
-    const response = await plaid.itemPublicTokenExchange({ public_token });
+    const { link_token } = req.body;
+    if (!link_token) return res.status(400).json({ error: 'link_token required' });
 
+    const response = await plaid.linkTokenGet({ link_token });
+    let publicToken = null;
+    for (const session of response.data.link_sessions || []) {
+      for (const result of session.results?.item_add_results || []) {
+        if (result.public_token) publicToken = result.public_token;
+      }
+    }
+    if (!publicToken) return res.json({ linked: false });
+
+    const exchange = await plaid.itemPublicTokenExchange({ public_token: publicToken });
     const data = loadData();
-    data.items.push({
-      access_token: response.data.access_token,
-      item_id: response.data.item_id,
-      cursor: null,
-      transactions: [],
-    });
-    saveData(data);
-    res.json({ ok: true });
+    if (!data.items.some((item) => item.item_id === exchange.data.item_id)) {
+      data.items.push({
+        access_token: exchange.data.access_token,
+        item_id: exchange.data.item_id,
+        cursor: null,
+        transactions: [],
+      });
+      saveData(data);
+    }
+    res.json({ linked: true });
   } catch (err) {
     fail(res, err);
   }

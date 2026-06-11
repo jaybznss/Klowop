@@ -16,7 +16,7 @@ A native iOS app that runs your whole life from one place, designed to look and 
 - **SwiftUI + SwiftData**, iOS 26+ — built against the modern SDK so it adopts **Liquid Glass** (floating minimizing tab bar, glass input bar and buttons) and feels first-party on iOS 26/27.
 - **Claude API** (`claude-opus-4-8`) with tool use: the assistant calls 8 tools (`add_calendar_event`, `log_meal`, `get_finance_overview`, …) that read/write the local database.
 - **Google Calendar**: OAuth 2.0 + PKCE via `ASWebAuthenticationSession`, syncing against the Calendar v3 REST API.
-- **Plaid**: bank linking through Plaid Link (LinkKit). The Plaid secret never touches the phone — a tiny Node companion server in [`server/`](server) handles token exchange, balances, transactions (`/transactions/sync`), and recurring-stream detection.
+- **Plaid**: bank linking through **Hosted Link** (browser-based — no native Plaid binary in the app). The Plaid secret never touches the phone — a tiny Node companion server in [`server/`](server) creates link sessions, exchanges tokens, and serves balances, transactions (`/transactions/sync`), and recurring-stream detection.
 - All secrets (API keys, OAuth tokens) live in the iOS **Keychain**.
 
 ## Repository layout
