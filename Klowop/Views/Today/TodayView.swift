@@ -13,7 +13,7 @@ struct TodayView: View {
     @State private var settings = AppSettings.shared
     @State private var newTodoTitle = ""
     @State private var completedTodoCount = 0
-    @State private var briefing: String?
+    @State private var briefing: String? = BriefingScheduler.cachedBriefingForToday
     @State private var briefingLoading = false
 
     init() {
@@ -120,15 +120,10 @@ struct TodayView: View {
         Task { @MainActor in
             defer { briefingLoading = false }
             do {
-                briefing = try await ClaudeAssistantService.shared.oneShot(
-                    """
-                    Write my daily briefing. First use tools to check: today's calendar events, \
-                    my open to-dos, today's nutrition so far, my Apple Health activity if connected, \
-                    and any subscriptions renewing in the next 7 days. \
-                    Then write a friendly, skimmable briefing under 120 words — lead with the most \
-                    important thing, use short bullet points, and end with one practical suggestion.
-                    """,
-                    context: context)
+                let text = try await ClaudeAssistantService.shared.oneShot(
+                    BriefingScheduler.prompt, context: context)
+                briefing = text
+                BriefingScheduler.cache(text)
             } catch {
                 briefing = error.localizedDescription
             }

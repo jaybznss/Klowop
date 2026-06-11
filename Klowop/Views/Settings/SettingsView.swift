@@ -35,6 +35,37 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle("Morning briefing", isOn: $settings.autoBriefingEnabled)
+                    .onChange(of: settings.autoBriefingEnabled) { _, enabled in
+                        if enabled {
+                            Task {
+                                if !notifications.isEnabled {
+                                    await notifications.requestAuthorization()
+                                }
+                                BriefingScheduler.scheduleNext()
+                            }
+                        } else {
+                            BriefingScheduler.scheduleNext() // cancels when disabled
+                        }
+                    }
+                if settings.autoBriefingEnabled {
+                    Picker("Around", selection: $settings.briefingHour) {
+                        ForEach(5..<13, id: \.self) { hour in
+                            Text(Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: .now)!
+                                .formatted(date: .omitted, time: .shortened)).tag(hour)
+                        }
+                    }
+                    .onChange(of: settings.briefingHour) {
+                        BriefingScheduler.scheduleNext()
+                    }
+                }
+            } header: {
+                Text("Daily briefing")
+            } footer: {
+                Text("Your secretary writes a morning summary and sends it as a notification. iOS schedules background work opportunistically, so it can arrive a little after the chosen time. Uses your API key (~1–2¢ per briefing).")
+            }
+
+            Section {
                 SecureField("Anthropic API key (sk-ant-…)", text: $settings.anthropicAPIKey)
             } header: {
                 Text("Assistant")

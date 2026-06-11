@@ -35,6 +35,10 @@ targets:
           - UIInterfaceOrientationPortrait
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        UIBackgroundModes:
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.jaybznss.klowop.briefing
         NSHealthShareUsageDescription: >-
           Klowop reads your Apple Watch activity and body composition
           (weight, body fat, lean mass) to show them alongside your food log.

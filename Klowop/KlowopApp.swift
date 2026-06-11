@@ -30,7 +30,11 @@ struct KlowopApp: App {
                     await NotificationService.shared.checkBudgets(
                         context: container.mainContext)
                 }
+                BriefingScheduler.scheduleNext()
             }
+        }
+        .backgroundTask(.appRefresh(BriefingScheduler.taskID)) {
+            await BriefingScheduler.runNow()
         }
     }
 }
