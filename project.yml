@@ -78,3 +78,16 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 1.0.0
+
+# Explicit shared scheme so `xcodegen generate` always recreates the app
+# scheme (Xcode only auto-creates the extension's otherwise).
+schemes:
+  Klowop:
+    build:
+      targets:
+        Klowop: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
