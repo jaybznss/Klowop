@@ -29,6 +29,13 @@ enum Theme {
         colors: [.cyan, .teal], startPoint: .topLeading, endPoint: .bottomTrailing)
     static let budgetGradient = LinearGradient(
         colors: [.orange, .yellow], startPoint: .topLeading, endPoint: .bottomTrailing)
+
+    /// Stable per-event color (a hash that survives relaunches, unlike hashValue).
+    static let eventPalette: [Color] = [.blue, .indigo, .teal, .green, .orange, .pink, .purple, .red]
+    static func eventColor(_ title: String) -> Color {
+        let sum = title.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+        return eventPalette[sum % eventPalette.count]
+    }
 }
 
 // MARK: - Card chrome
