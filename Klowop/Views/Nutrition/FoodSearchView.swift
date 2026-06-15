@@ -10,6 +10,9 @@ struct FoodSearchView: View {
 
     let day: Date
 
+    @Query(sort: \FavoriteFood.createdAt, order: .reverse) private var favorites: [FavoriteFood]
+    @Query(sort: \Meal.date, order: .reverse) private var allMeals: [Meal]
+
     @State private var query = ""
     @State private var results: [FoodDatabaseService.FoodItem] = []
     @State private var isSearching = false
@@ -18,6 +21,22 @@ struct FoodSearchView: View {
     @State private var showingScanner = false
     @State private var showingManualEntry = false
     @State private var isLookingUpBarcode = false
+    @State private var loggedCount = 0
+
+    /// Most-recent distinct meals (by name), excluding ones already favorited.
+    private var recentDistinct: [Meal] {
+        let favoriteNames = Set(favorites.map { $0.name.lowercased() })
+        var seen = Set<String>()
+        var out: [Meal] = []
+        for meal in allMeals {
+            let key = meal.name.lowercased()
+            if seen.contains(key) || favoriteNames.contains(key) { continue }
+            seen.insert(key)
+            out.append(meal)
+            if out.count >= 8 { break }
+        }
+        return out
+    }
 
     var body: some View {
         NavigationStack {
@@ -33,14 +52,45 @@ struct FoodSearchView: View {
                 if let errorMessage {
                     Text(errorMessage).font(.caption).foregroundStyle(.red)
                 }
-                if results.isEmpty && !isSearching && query.isEmpty {
-                    introSection
+                if query.isEmpty && !isSearching {
+                    if !favorites.isEmpty {
+                        Section("Favorites") {
+                            ForEach(favorites) { fav in
+                                Button { quickLogFavorite(fav) } label: {
+                                    quickRow(name: fav.name, brand: fav.brand,
+                                             calories: fav.calories,
+                                             symbol: "star.fill", tint: .yellow)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .onDelete { offsets in
+                                for index in offsets { context.delete(favorites[index]) }
+                                try? context.save()
+                            }
+                        }
+                    }
+                    if !recentDistinct.isEmpty {
+                        Section("Recent") {
+                            ForEach(recentDistinct) { meal in
+                                Button { quickLogRecent(meal) } label: {
+                                    quickRow(name: meal.name, brand: meal.notes,
+                                             calories: meal.calories,
+                                             symbol: "clock.arrow.circlepath", tint: Theme.nutrition)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    if favorites.isEmpty && recentDistinct.isEmpty {
+                        introSection
+                    }
                 }
                 ForEach(results) { item in
                     Button { selectedItem = item } label: { resultRow(item) }
                         .buttonStyle(.plain)
                 }
             }
+            .sensoryFeedback(.success, trigger: loggedCount)
             .navigationTitle("Log Food")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
@@ -86,7 +136,7 @@ struct FoodSearchView: View {
                 .foregroundStyle(Theme.nutrition)
             Text("Real nutrition data")
                 .font(.headline)
-            Text("Search millions of foods from the Open Food Facts database, or scan a product's barcode. Portions are scaled from verified per-100g values.")
+            Text("Search the USDA and Open Food Facts databases, or scan a barcode. Portions scale from verified per-100g values — and anything you log shows up here as a recent for one-tap re-logging.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -132,6 +182,45 @@ struct FoodSearchView: View {
         }
     }
 
+    private func quickRow(name: String, brand: String?, calories: Int,
+                          symbol: String, tint: Color) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(.subheadline.weight(.medium))
+                if let brand, !brand.isEmpty {
+                    Text(brand).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Text("\(calories) kcal")
+                .font(.subheadline)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            Image(systemName: "plus.circle.fill")
+                .foregroundStyle(Theme.nutrition)
+        }
+    }
+
+    private func quickLogFavorite(_ fav: FavoriteFood) {
+        logMeal(into: context, day: day, name: fav.name, brand: fav.brand,
+                mealType: mealTypeForNow(), calories: fav.calories,
+                protein: fav.protein, carbs: fav.carbs, fat: fav.fat)
+        loggedCount += 1
+        dismiss()
+    }
+
+    private func quickLogRecent(_ meal: Meal) {
+        logMeal(into: context, day: day, name: meal.name, brand: meal.notes,
+                mealType: mealTypeForNow(), calories: meal.calories,
+                protein: meal.protein, carbs: meal.carbs, fat: meal.fat)
+        loggedCount += 1
+        dismiss()
+    }
+
     private func search() async {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
@@ -158,6 +247,31 @@ struct FoodSearchView: View {
     }
 }
 
+// MARK: - Shared logging
+
+private func mealTypeForNow() -> String {
+    let hour = Calendar.current.component(.hour, from: .now)
+    return hour < 11 ? "breakfast" : hour < 15 ? "lunch" : hour < 21 ? "dinner" : "snack"
+}
+
+/// Creates a Meal on the given day and mirrors it to Apple Health.
+@MainActor
+private func logMeal(into context: ModelContext, day: Date, name: String, brand: String?,
+                     mealType: String, calories: Int, protein: Double, carbs: Double, fat: Double) {
+    let date = Calendar.current.isDateInToday(day) ? Date.now
+        : Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: day) ?? day
+    let meal = Meal(name: name, mealType: mealType, calories: calories,
+                    protein: protein, carbs: carbs, fat: fat, date: date, notes: brand)
+    context.insert(meal)
+    try? context.save()
+    Task { @MainActor in
+        meal.healthKitUUID = await HealthKitService.shared.logMeal(
+            name: meal.name, calories: meal.calories, protein: meal.protein,
+            carbs: meal.carbs, fat: meal.fat, date: meal.date)
+        try? context.save()
+    }
+}
+
 // MARK: - Portion picker
 
 struct PortionView: View {
@@ -169,6 +283,7 @@ struct PortionView: View {
 
     @State private var grams: Double
     @State private var mealType: String
+    @State private var savedFavorite = false
 
     init(item: FoodDatabaseService.FoodItem, day: Date, onDone: @escaping () -> Void) {
         self.item = item
@@ -221,6 +336,22 @@ struct PortionView: View {
                 LabeledContent("Carbs", value: String(format: "%.1f g", item.carbsPer100g * factor))
                 LabeledContent("Fat", value: String(format: "%.1f g", item.fatPer100g * factor))
             }
+            Section {
+                Button {
+                    let fav = FavoriteFood(
+                        name: item.name, brand: item.brand, calories: calories,
+                        protein: item.proteinPer100g * factor,
+                        carbs: item.carbsPer100g * factor,
+                        fat: item.fatPer100g * factor, mealType: mealType)
+                    context.insert(fav)
+                    try? context.save()
+                    savedFavorite = true
+                } label: {
+                    Label(savedFavorite ? "Saved to favorites" : "Save as favorite",
+                          systemImage: savedFavorite ? "star.fill" : "star")
+                }
+                .disabled(savedFavorite)
+            }
         }
         .navigationTitle("Portion")
         .navigationBarTitleDisplayMode(.inline)
@@ -240,24 +371,11 @@ struct PortionView: View {
     }
 
     private func save() {
-        let date = Calendar.current.isDateInToday(day) ? Date.now
-            : Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: day) ?? day
-        let meal = Meal(name: item.name,
-                        mealType: mealType,
-                        calories: calories,
-                        protein: item.proteinPer100g * factor,
-                        carbs: item.carbsPer100g * factor,
-                        fat: item.fatPer100g * factor,
-                        date: date,
-                        notes: item.brand)
-        context.insert(meal)
-        try? context.save()
-        Task { @MainActor in
-            meal.healthKitUUID = await HealthKitService.shared.logMeal(
-                name: meal.name, calories: meal.calories, protein: meal.protein,
-                carbs: meal.carbs, fat: meal.fat, date: meal.date)
-            try? context.save()
-        }
+        logMeal(into: context, day: day, name: item.name, brand: item.brand,
+                mealType: mealType, calories: calories,
+                protein: item.proteinPer100g * factor,
+                carbs: item.carbsPer100g * factor,
+                fat: item.fatPer100g * factor)
         onDone()
     }
 }

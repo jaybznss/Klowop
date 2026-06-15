@@ -303,6 +303,13 @@ struct NutritionView: View {
                 }
                 .swipeActions { } // keep row tappable in ScrollView context
                 .contextMenu {
+                    Button {
+                        context.insert(FavoriteFood(
+                            name: meal.name, brand: meal.notes, calories: meal.calories,
+                            protein: meal.protein, carbs: meal.carbs, fat: meal.fat,
+                            mealType: meal.mealType))
+                        try? context.save()
+                    } label: { Label("Add to favorites", systemImage: "star") }
                     Button(role: .destructive) {
                         if let uuid = meal.healthKitUUID {
                             Task { await HealthKitService.shared.deleteMeal(uuid: uuid) }

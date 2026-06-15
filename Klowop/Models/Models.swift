@@ -7,7 +7,8 @@ enum AppGroup {
 
     static var schema: Schema {
         Schema([Meal.self, CalendarEvent.self, TodoItem.self, FinancialAccount.self,
-                MoneyTransaction.self, Subscription.self, Budget.self, ChatMessage.self])
+                MoneyTransaction.self, Subscription.self, Budget.self, FavoriteFood.self,
+                ChatMessage.self])
     }
 
     static func makeModelContainer() throws -> ModelContainer {
@@ -167,6 +168,33 @@ final class Subscription {
         case "yearly": return amount / 12
         default: return amount
         }
+    }
+}
+
+/// A saved food for one-tap re-logging. Stores an already-portioned amount of
+/// nutrition, so logging a favorite needs no further input.
+@Model
+final class FavoriteFood {
+    var name: String
+    var brand: String?
+    var calories: Int
+    var protein: Double
+    var carbs: Double
+    var fat: Double
+    var mealType: String
+    var createdAt: Date
+
+    init(name: String, brand: String? = nil, calories: Int,
+         protein: Double = 0, carbs: Double = 0, fat: Double = 0,
+         mealType: String = "snack", createdAt: Date = .now) {
+        self.name = name
+        self.brand = brand
+        self.calories = calories
+        self.protein = protein
+        self.carbs = carbs
+        self.fat = fat
+        self.mealType = mealType
+        self.createdAt = createdAt
     }
 }
 

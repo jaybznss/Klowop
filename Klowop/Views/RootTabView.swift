@@ -35,6 +35,7 @@ struct RootTabView: View {
     RootTabView()
         .modelContainer(for: [Meal.self, CalendarEvent.self, TodoItem.self,
                               FinancialAccount.self, MoneyTransaction.self,
-                              Subscription.self, ChatMessage.self],
+                              Subscription.self, Budget.self, FavoriteFood.self,
+                              ChatMessage.self],
                         inMemory: true)
 }
