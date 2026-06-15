@@ -16,6 +16,21 @@ enum AssistantTools {
         return isoFormatter.date(from: s)
     }
 
+    /// JSON numbers from the API arrive as NSNumber. `as? Double` fails on an
+    /// integer-backed NSNumber (and `as? Int` fails on a float-backed one), so
+    /// coerce through NSNumber to accept both `300` and `300.0`.
+    static func doubleValue(_ value: Any?) -> Double? {
+        if let n = value as? NSNumber { return n.doubleValue }
+        if let s = value as? String { return Double(s) }
+        return nil
+    }
+
+    static func intValue(_ value: Any?) -> Int? {
+        if let n = value as? NSNumber { return n.intValue }
+        if let s = value as? String { return Int(s) }
+        return nil
+    }
+
     // MARK: - Definitions sent in the `tools` array
 
     static var definitions: [[String: Any]] {
@@ -67,7 +82,7 @@ enum AssistantTools {
                  required: []),
 
             tool("search_food_database",
-                 "Search the Open Food Facts nutrition database for real per-100g nutrition data. Call this BEFORE log_meal whenever the user mentions a branded or specific product (e.g. 'a Snickers', 'Chobani yogurt') or when you're unsure of the nutrition — then scale the per-100g values to the portion eaten.",
+                 "Search the USDA FoodData Central and Open Food Facts databases for real per-100g nutrition data — USDA is authoritative for generic foods (e.g. 'cooked white rice', 'chicken breast'), Open Food Facts for branded products (e.g. 'a Snickers', 'Chobani yogurt'). Call this BEFORE log_meal whenever the user names a specific food and you're not certain of its nutrition, then scale the per-100g values to the portion eaten.",
                  properties: ["query": str("Food or product name to look up")],
                  required: ["query"]),
 
@@ -311,13 +326,13 @@ enum AssistantTools {
     private static func logMeal(_ input: [String: Any], _ context: ModelContext) async throws -> String {
         guard let name = input["name"] as? String,
               let mealType = input["meal_type"] as? String,
-              let calories = input["calories"] as? Int else {
+              let calories = intValue(input["calories"]) else {
             return "Error: name, meal_type and calories are required."
         }
         let meal = Meal(name: name, mealType: mealType, calories: calories,
-                        protein: (input["protein"] as? Double) ?? 0,
-                        carbs: (input["carbs"] as? Double) ?? 0,
-                        fat: (input["fat"] as? Double) ?? 0,
+                        protein: doubleValue(input["protein"]) ?? 0,
+                        carbs: doubleValue(input["carbs"]) ?? 0,
+                        fat: doubleValue(input["fat"]) ?? 0,
                         date: parseDate(input["date"]) ?? .now)
         meal.healthKitUUID = await HealthKitService.shared.logMeal(
             name: name, calories: calories, protein: meal.protein,
@@ -331,7 +346,7 @@ enum AssistantTools {
     @MainActor
     private static func addSubscription(_ input: [String: Any], _ context: ModelContext) throws -> String {
         guard let name = input["name"] as? String,
-              let amount = input["amount"] as? Double,
+              let amount = doubleValue(input["amount"]),
               let cycle = input["cycle"] as? String,
               let renewal = parseDate(input["next_renewal"]) else {
             return "Error: name, amount, cycle and next_renewal (ISO 8601) are required."
@@ -356,7 +371,7 @@ enum AssistantTools {
     @MainActor
     private static func searchTransactions(_ input: [String: Any], _ context: ModelContext) throws -> String {
         guard let query = (input["query"] as? String)?.lowercased() else { return "Error: query is required." }
-        let days = (input["days"] as? Int) ?? 30
+        let days = intValue(input["days"]) ?? 30
         let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: .now)!
         let matches = try context.fetch(FetchDescriptor<MoneyTransaction>(
             predicate: #Predicate { $0.date >= cutoff },
@@ -372,7 +387,7 @@ enum AssistantTools {
 
     @MainActor
     private static func spendingSummary(_ input: [String: Any], _ context: ModelContext) throws -> String {
-        let days = (input["days"] as? Int) ?? 30
+        let days = intValue(input["days"]) ?? 30
         let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: .now)!
         let spent = try context.fetch(FetchDescriptor<MoneyTransaction>(
             predicate: #Predicate { $0.date >= cutoff && $0.amount > 0 }))
@@ -388,7 +403,7 @@ enum AssistantTools {
     @MainActor
     private static func setBudget(_ input: [String: Any], _ context: ModelContext) throws -> String {
         guard let category = input["category"] as? String,
-              let limit = input["monthly_limit"] as? Double else {
+              let limit = doubleValue(input["monthly_limit"]) else {
             return "Error: category and monthly_limit are required."
         }
         let budgets = try context.fetch(FetchDescriptor<Budget>())
