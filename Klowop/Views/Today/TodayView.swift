@@ -72,7 +72,8 @@ struct TodayView: View {
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: .now)
-        let name = settings.userName.isEmpty ? "" : ", \(settings.userName)"
+        let firstName = settings.userName.split(separator: " ").first.map(String.init) ?? ""
+        let name = firstName.isEmpty ? "" : ", \(firstName)"
         switch hour {
         case ..<12: return "Good morning\(name)"
         case ..<18: return "Good afternoon\(name)"
@@ -130,10 +131,10 @@ struct TodayView: View {
     }
 
     private var statRow: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             statTile(title: "Calories",
                      value: "\(caloriesToday)",
-                     detail: "of \(settings.dailyCalorieGoal)",
+                     detail: "of \(settings.dailyCalorieGoal.formatted())",
                      symbol: "flame.fill", color: Theme.nutrition,
                      progress: min(1, Double(caloriesToday) / Double(max(1, settings.dailyCalorieGoal))))
             statTile(title: "This week",
@@ -165,10 +166,10 @@ struct TodayView: View {
             Text(detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            if let progress {
-                ProgressView(value: progress)
-                    .tint(color)
-            }
+            // Always lay out the bar so both tiles match height; hide it when unused.
+            ProgressView(value: progress ?? 0)
+                .tint(color)
+                .opacity(progress == nil ? 0 : 1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .card()
