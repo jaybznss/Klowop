@@ -35,7 +35,9 @@ final class GoogleCalendarService: NSObject, ASWebAuthenticationPresentationCont
         }
     }
 
-    private var clientID: String { AppSettings.shared.googleClientID }
+    private var clientID: String {
+        AppSettings.shared.googleClientID.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     /// iOS OAuth clients use the reversed client ID as redirect scheme.
     private var redirectScheme: String {
