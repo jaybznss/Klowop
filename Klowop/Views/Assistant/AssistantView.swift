@@ -56,6 +56,7 @@ struct AssistantView: View {
                 }
                 inputBar
             }
+            .background(AuroraBackground(colors: [.indigo, Theme.assistant, .blue]))
             .animation(.snappy, value: messages.count)
             .animation(.smooth, value: assistant.isThinking)
             .sensoryFeedback(.success, trigger: messages.count) { old, new in

@@ -46,6 +46,8 @@ struct AgendaView: View {
                                            description: Text("Add one with + or ask the assistant."))
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(AuroraBackground(colors: [.blue, .cyan, .teal]))
             .navigationTitle("Agenda")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

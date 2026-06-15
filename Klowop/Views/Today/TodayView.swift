@@ -49,7 +49,7 @@ struct TodayView: View {
                 .padding(.bottom, 24)
             }
             .navigationTitle("Today")
-            .background(Color(.systemGroupedBackground))
+            .background(AuroraBackground(colors: [.indigo, Theme.assistant, .blue]))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
@@ -112,6 +112,7 @@ struct TodayView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .heroCard(Theme.assistant)
+        .glow(Theme.assistant)
         .animation(.smooth, value: briefing)
     }
 

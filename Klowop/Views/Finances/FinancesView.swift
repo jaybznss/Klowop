@@ -40,7 +40,7 @@ struct FinancesView: View {
                 .padding(.bottom, 24)
             }
             .navigationTitle("Money")
-            .background(Color(.systemGroupedBackground))
+            .background(AuroraBackground(colors: [.indigo, .blue, .purple]))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -83,6 +83,7 @@ struct FinancesView: View {
         }
         .frame(maxWidth: .infinity)
         .heroCard(Theme.finance)
+        .glow(Theme.finance)
     }
 
     private var netWorthCard: some View {

@@ -89,11 +89,12 @@ struct CardHeader: View {
     }
 }
 
-/// Gradient progress ring with rounded caps, animated on value changes.
+/// Gradient progress ring with rounded caps, a soft glow, animated on change.
 struct ProgressRing: View {
     let progress: Double
     let gradient: LinearGradient
     var lineWidth: CGFloat = 8
+    var glow: Color = .clear
 
     var body: some View {
         ZStack {
@@ -103,8 +104,60 @@ struct ProgressRing: View {
                 .trim(from: 0, to: min(1, max(0, progress)))
                 .stroke(gradient, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+                .shadow(color: glow.opacity(0.55), radius: 7)
         }
         .animation(.smooth(duration: 0.6), value: progress)
+    }
+}
+
+// MARK: - Ambient "aurora" backdrop
+
+/// Slow-drifting, blurred color blobs concentrated near the top of the screen,
+/// over the grouped background — ambient light that makes each screen feel alive
+/// without washing out content. Tinted per life-sphere.
+struct AuroraBackground: View {
+    var colors: [Color]
+    @State private var drift = false
+
+    var body: some View {
+        ZStack {
+            Color(.systemGroupedBackground)
+            GeometryReader { geo in
+                ZStack {
+                    blob(colors[0], x: drift ? 0.22 : 0.32, y: drift ? 0.06 : 0.16,
+                         scale: 0.95, geo: geo)
+                    blob(colors[min(1, colors.count - 1)], x: drift ? 0.82 : 0.70,
+                         y: drift ? 0.20 : 0.10, scale: 0.85, geo: geo)
+                    if colors.count > 2 {
+                        blob(colors[2], x: drift ? 0.50 : 0.60, y: drift ? -0.02 : 0.08,
+                             scale: 0.75, geo: geo)
+                    }
+                }
+                .blur(radius: 70)
+                .opacity(0.32)
+            }
+            .ignoresSafeArea()
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 18).repeatForever(autoreverses: true)) {
+                drift = true
+            }
+        }
+    }
+
+    private func blob(_ color: Color, x: CGFloat, y: CGFloat, scale: CGFloat,
+                      geo: GeometryProxy) -> some View {
+        Circle()
+            .fill(color)
+            .frame(width: geo.size.width * scale, height: geo.size.width * scale)
+            .position(x: geo.size.width * x, y: geo.size.height * y)
+    }
+}
+
+extension View {
+    /// Soft colored glow for hero surfaces and key numbers.
+    func glow(_ color: Color, radius: CGFloat = 18) -> some View {
+        shadow(color: color.opacity(0.35), radius: radius, y: 6)
     }
 }
 

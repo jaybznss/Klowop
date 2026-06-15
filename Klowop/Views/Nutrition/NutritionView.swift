@@ -51,7 +51,7 @@ struct NutritionView: View {
                 .padding(.bottom, 24)
             }
             .navigationTitle("Health")
-            .background(Color(.systemGroupedBackground))
+            .background(AuroraBackground(colors: [.green, .mint, .pink]))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingEditor = true } label: { Image(systemName: "plus") }
@@ -252,7 +252,7 @@ struct NutritionView: View {
                 Spacer()
                 ZStack {
                     ProgressRing(progress: Double(calories) / Double(max(1, settings.dailyCalorieGoal)),
-                                 gradient: Theme.nutritionGradient)
+                                 gradient: Theme.nutritionGradient, glow: .green)
                     Text("\(Int(Double(calories) / Double(max(1, settings.dailyCalorieGoal)) * 100))%")
                         .font(.caption.weight(.bold))
                         .fontDesign(.rounded)
