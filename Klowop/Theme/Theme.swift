@@ -124,20 +124,29 @@ struct AuroraBackground: View {
             Color(.systemGroupedBackground)
             GeometryReader { geo in
                 ZStack {
-                    blob(colors[0], x: drift ? 0.22 : 0.32, y: drift ? 0.06 : 0.16,
-                         scale: 0.95, geo: geo)
-                    blob(colors[min(1, colors.count - 1)], x: drift ? 0.82 : 0.70,
-                         y: drift ? 0.20 : 0.10, scale: 0.85, geo: geo)
+                    blob(colors[0], x: drift ? 0.20 : 0.32, y: drift ? 0.10 : 0.20,
+                         scale: 1.0, geo: geo)
+                    blob(colors[min(1, colors.count - 1)], x: drift ? 0.84 : 0.70,
+                         y: drift ? 0.22 : 0.12, scale: 0.9, geo: geo)
                     if colors.count > 2 {
-                        blob(colors[2], x: drift ? 0.50 : 0.60, y: drift ? -0.02 : 0.08,
-                             scale: 0.75, geo: geo)
+                        blob(colors[2], x: drift ? 0.50 : 0.62, y: drift ? 0.02 : 0.12,
+                             scale: 0.8, geo: geo)
                     }
                 }
-                .blur(radius: 70)
-                .opacity(0.32)
+                .blur(radius: 80)
+                // Dissolve the glow smoothly toward the middle so the blob edges
+                // never read as a hard line; the grouped background takes over below.
+                .mask(
+                    LinearGradient(stops: [
+                        .init(color: .black, location: 0.0),
+                        .init(color: .black, location: 0.32),
+                        .init(color: .clear, location: 0.72),
+                    ], startPoint: .top, endPoint: .bottom)
+                )
+                .opacity(0.5)
             }
-            .ignoresSafeArea()
         }
+        .ignoresSafeArea()
         .onAppear {
             withAnimation(.easeInOut(duration: 18).repeatForever(autoreverses: true)) {
                 drift = true
