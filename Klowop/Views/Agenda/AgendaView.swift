@@ -125,7 +125,7 @@ struct AgendaView: View {
                     Text("Connect Google Calendar").font(.subheadline.weight(.semibold))
                     Text(googleError ?? "See your events here and sync both ways.")
                         .font(.caption)
-                        .foregroundStyle(googleError == nil ? .secondary : .red)
+                        .foregroundStyle(googleError == nil ? Color.secondary : Color.red)
                         .lineLimit(2)
                 }
                 Spacer()
@@ -154,14 +154,14 @@ struct AgendaView: View {
             if visible {
                 Text(date.formatted(.dateTime.weekday(.abbreviated)).uppercased())
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(isToday ? Theme.agenda : .secondary)
+                    .foregroundStyle(isToday ? Theme.agenda : Color.secondary)
                 ZStack {
                     if isToday {
                         Circle().fill(Theme.agendaGradient).frame(width: 34, height: 34)
                     }
                     Text(date.formatted(.dateTime.day()))
                         .font(.headline)
-                        .foregroundStyle(isToday ? .white : .primary)
+                        .foregroundStyle(isToday ? Color.white : Color.primary)
                 }
             }
         }
