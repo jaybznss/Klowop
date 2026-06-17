@@ -22,6 +22,7 @@ struct AgendaView: View {
                         events: events,
                         showConnect: !google.isConnected,
                         connectError: googleError,
+                        syncError: google.lastError,
                         onConnect: connect,
                         onSelect: { editingEvent = $0 },
                         onDelete: delete)

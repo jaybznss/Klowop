@@ -65,10 +65,13 @@ final class CalendarEvent {
     var notes: String?
     var googleEventID: String?
     var needsGoogleSync: Bool
+    var calendarID: String?       // source Google calendar (for multi-calendar sync)
+    var colorHex: String?         // that calendar's color, e.g. "#039BE5"
 
     init(title: String, startDate: Date, endDate: Date,
          location: String? = nil, notes: String? = nil,
-         googleEventID: String? = nil, needsGoogleSync: Bool = true) {
+         googleEventID: String? = nil, needsGoogleSync: Bool = true,
+         calendarID: String? = nil, colorHex: String? = nil) {
         self.title = title
         self.startDate = startDate
         self.endDate = endDate
@@ -76,6 +79,8 @@ final class CalendarEvent {
         self.notes = notes
         self.googleEventID = googleEventID
         self.needsGoogleSync = needsGoogleSync
+        self.calendarID = calendarID
+        self.colorHex = colorHex
     }
 }
 

@@ -21,7 +21,7 @@ enum CalendarMode: String, CaseIterable, Identifiable {
 struct EventChip: View {
     let event: CalendarEvent
 
-    private var color: Color { Theme.eventColor(event.title) }
+    private var color: Color { Theme.color(for: event) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -61,6 +61,7 @@ struct ScheduleListView: View {
     let events: [CalendarEvent]
     var showConnect: Bool
     var connectError: String?
+    var syncError: String?
     var onConnect: () -> Void
     var onSelect: (CalendarEvent) -> Void
     var onDelete: (CalendarEvent) -> Void
@@ -87,6 +88,13 @@ struct ScheduleListView: View {
         List {
             if showConnect {
                 connectBanner.listRowBackground(Color.clear).listRowSeparator(.hidden)
+            }
+            if let syncError {
+                Label(syncError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color.orange)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
             ForEach(months, id: \.label) { month in
                 Section {
@@ -271,7 +279,7 @@ struct MonthCalendarView: View {
             HStack(spacing: 3) {
                 ForEach(Array(dots.enumerated()), id: \.offset) { _, event in
                     Circle()
-                        .fill(Theme.eventColor(event.title))
+                        .fill(Theme.color(for: event))
                         .frame(width: 5, height: 5)
                 }
             }

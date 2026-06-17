@@ -36,6 +36,26 @@ enum Theme {
         let sum = title.unicodeScalars.reduce(0) { $0 + Int($1.value) }
         return eventPalette[sum % eventPalette.count]
     }
+
+    /// An event's display color: its Google calendar color if synced, else a
+    /// stable color derived from the title.
+    static func color(for event: CalendarEvent) -> Color {
+        if let hex = event.colorHex, let color = Color(hex: hex) { return color }
+        return eventColor(event.title)
+    }
+}
+
+extension Color {
+    /// Parses "#RRGGBB" / "RRGGBB" hex strings (Google calendar colors).
+    init?(hex: String) {
+        var string = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if string.hasPrefix("#") { string.removeFirst() }
+        guard string.count == 6, let value = Int(string, radix: 16) else { return nil }
+        self.init(
+            red: Double((value >> 16) & 0xFF) / 255,
+            green: Double((value >> 8) & 0xFF) / 255,
+            blue: Double(value & 0xFF) / 255)
+    }
 }
 
 // MARK: - Card chrome

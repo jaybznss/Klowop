@@ -198,39 +198,70 @@ final class GoogleCalendarService: NSObject, ASWebAuthenticationPresentationCont
         }
     }
 
+    /// Calendars the user has added in Google (their own plus shared/other-account
+    /// calendars), with each calendar's color.
+    private func fetchCalendarList() async throws -> [(id: String, color: String?)] {
+        let token = try await validAccessToken()
+        let url = URL(string: "https://www.googleapis.com/calendar/v3/users/me/calendarList")!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw GoogleError.api("could not load your calendar list")
+        }
+        let items = json["items"] as? [[String: Any]] ?? []
+        return items.compactMap { item in
+            guard let id = item["id"] as? String,
+                  (item["selected"] as? Bool) != false else { return nil }  // skip hidden calendars
+            return (id, item["backgroundColor"] as? String)
+        }
+    }
+
     @MainActor
     private func pullRemoteEvents(context: ModelContext) async throws {
         let timeMin = iso.string(from: Calendar.current.date(byAdding: .day, value: -30, to: .now)!)
         let timeMax = iso.string(from: Calendar.current.date(byAdding: .year, value: 1, to: .now)!)
         let query = "events?singleEvents=true&maxResults=2500&orderBy=startTime&timeMin=\(timeMin)&timeMax=\(timeMax)"
-        let result = try await calendarRequest("GET", path: query)
-        let items = result["items"] as? [[String: Any]] ?? []
+
+        let calendars = try await fetchCalendarList()
 
         let synced = try context.fetch(FetchDescriptor<CalendarEvent>(
             predicate: #Predicate { $0.googleEventID != nil }))
         var byGoogleID: [String: CalendarEvent] = [:]
         for event in synced { if let id = event.googleEventID { byGoogleID[id] = event } }
 
-        for item in items {
-            guard let id = item["id"] as? String,
-                  (item["status"] as? String) != "cancelled",
-                  let start = parseGoogleDate(item["start"]),
-                  let end = parseGoogleDate(item["end"]) else { continue }
-            let title = (item["summary"] as? String) ?? "(no title)"
-            if let existing = byGoogleID[id] {
-                // Remote wins for events we didn't change locally.
-                if !existing.needsGoogleSync {
-                    existing.title = title
-                    existing.startDate = start
-                    existing.endDate = end
-                    existing.location = item["location"] as? String
-                    existing.notes = item["description"] as? String
+        for calendar in calendars {
+            // One calendar being inaccessible (e.g. free/busy only) shouldn't abort the rest.
+            guard let result = try? await calendarRequest("GET", path: query, calendarID: calendar.id) else {
+                continue
+            }
+            let items = result["items"] as? [[String: Any]] ?? []
+            for item in items {
+                guard let id = item["id"] as? String,
+                      (item["status"] as? String) != "cancelled",
+                      let start = parseGoogleDate(item["start"]),
+                      let end = parseGoogleDate(item["end"]) else { continue }
+                let title = (item["summary"] as? String) ?? "(no title)"
+                if let existing = byGoogleID[id] {
+                    // Remote wins for events we didn't change locally.
+                    if !existing.needsGoogleSync {
+                        existing.title = title
+                        existing.startDate = start
+                        existing.endDate = end
+                        existing.location = item["location"] as? String
+                        existing.notes = item["description"] as? String
+                        existing.calendarID = calendar.id
+                        existing.colorHex = calendar.color
+                    }
+                } else {
+                    context.insert(CalendarEvent(
+                        title: title, startDate: start, endDate: end,
+                        location: item["location"] as? String,
+                        notes: item["description"] as? String,
+                        googleEventID: id, needsGoogleSync: false,
+                        calendarID: calendar.id, colorHex: calendar.color))
                 }
-            } else {
-                context.insert(CalendarEvent(title: title, startDate: start, endDate: end,
-                                             location: item["location"] as? String,
-                                             notes: item["description"] as? String,
-                                             googleEventID: id, needsGoogleSync: false))
             }
         }
     }
@@ -248,9 +279,11 @@ final class GoogleCalendarService: NSObject, ASWebAuthenticationPresentationCont
         return nil
     }
 
-    private func calendarRequest(_ method: String, path: String, body: [String: Any]? = nil) async throws -> [String: Any] {
+    private func calendarRequest(_ method: String, path: String, calendarID: String = "primary",
+                                 body: [String: Any]? = nil) async throws -> [String: Any] {
         let token = try await validAccessToken()
-        let url = URL(string: "https://www.googleapis.com/calendar/v3/calendars/primary/\(path)")!
+        let encodedID = calendarID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? calendarID
+        let url = URL(string: "https://www.googleapis.com/calendar/v3/calendars/\(encodedID)/\(path)")!
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
