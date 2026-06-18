@@ -144,23 +144,20 @@ struct ProgressRing: View {
 /// without washing out content. Tinted per life-sphere.
 struct AuroraBackground: View {
     var colors: [Color]
-    @State private var drift = false
+    @State private var breathe = false
 
     var body: some View {
         ZStack {
             Color(.systemGroupedBackground)
             GeometryReader { geo in
                 ZStack {
-                    blob(colors[0], x: drift ? 0.20 : 0.32, y: drift ? 0.10 : 0.20,
-                         scale: 1.0, geo: geo)
-                    blob(colors[min(1, colors.count - 1)], x: drift ? 0.84 : 0.70,
-                         y: drift ? 0.22 : 0.12, scale: 0.9, geo: geo)
+                    blob(colors[0], x: 0.28, y: 0.16, scale: 1.0, geo: geo)
+                    blob(colors[min(1, colors.count - 1)], x: 0.76, y: 0.12, scale: 0.9, geo: geo)
                     if colors.count > 2 {
-                        blob(colors[2], x: drift ? 0.50 : 0.62, y: drift ? 0.02 : 0.12,
-                             scale: 0.8, geo: geo)
+                        blob(colors[2], x: 0.52, y: 0.06, scale: 0.8, geo: geo)
                     }
                 }
-                .blur(radius: 80)
+                .blur(radius: 70)
                 // Dissolve the glow smoothly toward the middle so the blob edges
                 // never read as a hard line; the grouped background takes over below.
                 .mask(
@@ -170,13 +167,18 @@ struct AuroraBackground: View {
                         .init(color: .clear, location: 0.72),
                     ], startPoint: .top, endPoint: .bottom)
                 )
-                .opacity(0.5)
+                // Rasterize the static blurred glow once on the GPU, then animate a
+                // cheap scale/opacity "breathing" on that cached texture — no
+                // per-frame re-blur, which is what made the whole app laggy.
+                .drawingGroup()
+                .scaleEffect(breathe ? 1.06 : 1.0, anchor: .top)
+                .opacity(breathe ? 0.52 : 0.42)
             }
         }
         .ignoresSafeArea()
         .onAppear {
-            withAnimation(.easeInOut(duration: 18).repeatForever(autoreverses: true)) {
-                drift = true
+            withAnimation(.easeInOut(duration: 9).repeatForever(autoreverses: true)) {
+                breathe = true
             }
         }
     }
