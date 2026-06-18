@@ -12,3 +12,6 @@ server/data.json
 
 # macOS
 .DS_Store
+klowop.db
+*.db-wal
+*.db-shm
