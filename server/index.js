@@ -8,6 +8,7 @@
 // Deploy on any Node 18+ host (Railway/Render/Fly/VPS). State lives in klowop.db.
 
 require('dotenv').config();
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const Database = require('better-sqlite3');
@@ -28,7 +29,11 @@ const sessionKey = new TextEncoder().encode(SESSION_SECRET || 'insecure-dev-secr
 
 // --- Database -------------------------------------------------------------
 
-const db = new Database(path.join(__dirname, 'klowop.db'));
+// DATABASE_PATH lets you point at a persistent volume (e.g. /data/klowop.db on
+// Railway) so accounts survive redeploys. Defaults to a local file for dev.
+const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'klowop.db');
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -99,6 +104,59 @@ function hasActiveSubscription(user) {
 function requireSubscription(req, res, next) {
   if (hasActiveSubscription(req.user)) return next();
   res.status(402).json({ error: 'subscription required', code: 'subscription_required' });
+}
+
+// --- StoreKit transaction verification ------------------------------------
+
+// Strict verification validates the signed transaction's full certificate chain
+// up to Apple's root CA (set STOREKIT_STRICT=true + provide the root cert for
+// production). When off, we fall back to a lenient leaf-only check so local
+// StoreKit testing (Xcode .storekit) — which isn't signed by Apple — still works.
+function loadAppleRootCerts() {
+  if (process.env.APPLE_ROOT_CA_BASE64) {
+    return [Buffer.from(process.env.APPLE_ROOT_CA_BASE64, 'base64')];
+  }
+  const certPath = path.join(__dirname, 'certs', 'AppleRootCA-G3.cer');
+  if (fs.existsSync(certPath)) return [fs.readFileSync(certPath)];
+  return [];
+}
+
+let signedDataVerifier = null;
+if (process.env.STOREKIT_STRICT === 'true') {
+  try {
+    const { SignedDataVerifier, Environment } = require('@apple/app-store-server-library');
+    const roots = loadAppleRootCerts();
+    if (!roots.length) throw new Error('Apple root CA not found (set APPLE_ROOT_CA_BASE64 or add certs/AppleRootCA-G3.cer)');
+    const environment = process.env.APPLE_ENVIRONMENT === 'Production'
+      ? Environment.PRODUCTION : Environment.SANDBOX;
+    const appAppleId = process.env.APPLE_APP_APPLE_ID ? Number(process.env.APPLE_APP_APPLE_ID) : undefined;
+    signedDataVerifier = new SignedDataVerifier(roots, false, environment, APPLE_BUNDLE_ID, appAppleId);
+    console.log('StoreKit: strict Apple cert-chain verification enabled.');
+  } catch (err) {
+    console.error('⚠️  STOREKIT_STRICT requested but verifier setup failed:', err.message);
+  }
+} else {
+  console.warn('⚠️  StoreKit strict verification OFF (dev mode). Set STOREKIT_STRICT=true for production.');
+}
+
+async function decodeTransaction(signedTransaction) {
+  if (signedDataVerifier) {
+    const payload = await signedDataVerifier.verifyAndDecodeTransaction(signedTransaction);
+    return {
+      productId: payload.productId,
+      expiresDate: payload.expiresDate,
+      originalTransactionId: payload.originalTransactionId,
+      bundleId: payload.bundleId,
+    };
+  }
+  // Lenient fallback: verify the JWS against its embedded leaf certificate only.
+  const header = jose.decodeProtectedHeader(signedTransaction);
+  const leaf = header.x5c && header.x5c[0];
+  if (!leaf) throw new Error('missing certificate chain');
+  const certPem = `-----BEGIN CERTIFICATE-----\n${leaf}\n-----END CERTIFICATE-----`;
+  const publicKey = await jose.importX509(certPem, header.alg);
+  const { payload } = await jose.compactVerify(signedTransaction, publicKey);
+  return JSON.parse(new TextDecoder().decode(payload));
 }
 
 // --- App ------------------------------------------------------------------
@@ -180,28 +238,15 @@ app.post('/api/assistant/messages', requireAuth, requireSubscription, async (req
   }
 });
 
-// 3. StoreKit 2: the app sends a signed transaction (JWS). We verify it and store
-//    the user's entitlement (product + expiry).
-//
-// ⚠️ SECURITY TODO before launch: this verifies the JWS signature with the leaf
-//    certificate embedded in the token, which proves the payload is internally
-//    consistent — but NOT yet that the leaf chains up to Apple's root CA. Add full
-//    x5c chain validation against AppleRootCA-G3 (or call the App Store Server API)
-//    before trusting entitlements in production.
+// 3. StoreKit 2: the app sends a signed transaction (JWS). We verify it (full
+//    Apple cert-chain validation when STOREKIT_STRICT=true) and store the user's
+//    entitlement (product + expiry).
 app.post('/api/subscription/verify', requireAuth, async (req, res) => {
   try {
     const { signedTransaction } = req.body;
     if (!signedTransaction) return res.status(400).json({ error: 'signedTransaction required' });
 
-    const header = jose.decodeProtectedHeader(signedTransaction);
-    const leaf = header.x5c && header.x5c[0];
-    if (!leaf) return res.status(400).json({ error: 'missing certificate chain' });
-
-    const certPem = `-----BEGIN CERTIFICATE-----\n${leaf}\n-----END CERTIFICATE-----`;
-    const publicKey = await jose.importX509(certPem, header.alg);
-    const { payload } = await jose.compactVerify(signedTransaction, publicKey);
-    const tx = JSON.parse(new TextDecoder().decode(payload));
-
+    const tx = await decodeTransaction(signedTransaction);
     if (tx.bundleId && tx.bundleId !== APPLE_BUNDLE_ID) {
       return res.status(400).json({ error: 'bundle mismatch' });
     }

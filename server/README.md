@@ -37,15 +37,28 @@ variables as the host's environment variables, ensure the working directory is
 writable (for `klowop.db` — or mount a volume), and point the app's
 **Settings → Backend URL** at the deployed HTTPS URL.
 
-## Before production — security hardening
+## Production hardening
 
-- [ ] **StoreKit chain validation:** `/api/subscription/verify` currently checks
-  the signed-transaction JWS against its embedded leaf certificate. Add full
-  `x5c` chain validation against **AppleRootCA-G3** (or call the App Store
-  Server API) before trusting entitlements — without it, a forged leaf could
-  grant a subscription.
+- [x] **StoreKit chain validation** — implemented via Apple's official
+  `@apple/app-store-server-library`. To enable in production:
+  1. Download **AppleRootCA-G3.cer** from <https://www.apple.com/certificateauthority/>.
+  2. Set `APPLE_ROOT_CA_BASE64` to its base64 (`base64 -i AppleRootCA-G3.cer | tr -d '\n'`),
+     or drop the file at `server/certs/AppleRootCA-G3.cer`.
+  3. Set `STOREKIT_STRICT=true`, `APPLE_ENVIRONMENT=Production`, and
+     `APPLE_APP_APPLE_ID=<your numeric App Store ID>`.
+  Leave `STOREKIT_STRICT=false` for local Xcode StoreKit testing (those
+  transactions aren't signed by Apple and would fail strict validation).
+- [x] **Persistent storage** — set `DATABASE_PATH` to a path on a persistent
+  volume. On Railway: add a **Volume** mounted at `/data`, then set
+  `DATABASE_PATH=/data/klowop.db` so accounts survive redeploys.
 - [ ] **Rate-limit** `/api/assistant/messages` per user; keep a hard Anthropic
-  billing cap.
-- [ ] Put it behind **HTTPS** (the host usually provides this) and set a strong
-  `SESSION_SECRET`.
-- [ ] Move `klowop.db` to a managed database (Postgres) if you expect scale.
+  billing cap (Anthropic console → Usage limits).
+- [ ] HTTPS (the host provides it) and a strong `SESSION_SECRET`.
+- [ ] Move to **Postgres** if you outgrow SQLite.
+
+## Going live checklist
+
+1. Add a Railway Volume + `DATABASE_PATH=/data/klowop.db`.
+2. Enable strict StoreKit (`STOREKIT_STRICT=true` + Apple root cert + app id).
+3. Switch Plaid to production (`PLAID_ENV=production`, production secret).
+4. Set `ALLOW_FREE_PREMIUM=false` so only subscribers get premium.

@@ -11,6 +11,7 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "@apple/app-store-server-library": "^1.4.0",
     "better-sqlite3": "^11.3.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
