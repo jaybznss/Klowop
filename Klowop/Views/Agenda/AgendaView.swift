@@ -47,6 +47,7 @@ struct AgendaView: View {
                     } label: {
                         Image(systemName: "square.grid.2x2")
                     }
+                    .accessibilityLabel("Switch calendar view")
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if mode == .month {
@@ -62,7 +63,9 @@ struct AgendaView: View {
                         }
                     }
                     .disabled(!google.isConnected || google.isSyncing)
+                    .accessibilityLabel("Sync with Google Calendar")
                     Button { showingEditor = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel("New event")
                 }
             }
             .sheet(isPresented: $showingEditor) { EventEditorView(event: nil) }

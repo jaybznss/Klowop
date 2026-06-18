@@ -52,6 +52,7 @@ struct FinancesView: View {
                         else { Image(systemName: "arrow.triangle.2.circlepath") }
                     }
                     .disabled(plaid.isBusy || accounts.allSatisfy { $0.plaidAccountID == nil })
+                    .accessibilityLabel("Refresh accounts")
                 }
             }
             .task { await plaid.completePendingLinkIfNeeded(context: context) }

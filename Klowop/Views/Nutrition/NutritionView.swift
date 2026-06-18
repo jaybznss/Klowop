@@ -55,6 +55,7 @@ struct NutritionView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingEditor = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel("Log food")
                 }
             }
             .sheet(isPresented: $showingEditor) { FoodSearchView(day: selectedDay) }

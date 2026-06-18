@@ -32,7 +32,9 @@ targets:
       path: Klowop/Info.plist
       properties:
         CFBundleDisplayName: Klowop
-        UILaunchScreen: {}
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         NSAppTransportSecurity:

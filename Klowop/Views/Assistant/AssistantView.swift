@@ -27,11 +27,13 @@ struct AssistantView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
+                        .accessibilityLabel("Settings")
                 }
                 if backend.isSignedIn {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(role: .destructive) { clearChat() } label: { Image(systemName: "trash") }
                             .disabled(messages.isEmpty)
+                            .accessibilityLabel("Clear conversation")
                     }
                 }
             }

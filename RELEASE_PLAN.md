@@ -38,13 +38,15 @@ The server in [`server/`](server) becomes a real multi-user backend:
 
 ## Phase 3 — App Store requirements  (mostly me)
 
-- [ ] **[me]** **Privacy Policy** (health + financial data) — text in repo; **[you]** host it at a URL.
-- [ ] **[me]** **Account deletion + data export** UI in Settings.
-- [ ] **[me]** Proper **launch screen** and finalized **app icon** (all appearances).
-- [ ] **[me]** **Export-compliance** flag (`ITSAppUsesNonExemptEncryption`).
-- [ ] **[me]** Accessibility pass (VoiceOver labels, Dynamic Type), empty-state + error polish.
-- [ ] **[you]** **App Privacy "nutrition label"** answers in App Store Connect (I'll give you the exact answers).
-- [ ] **[you]** Screenshots (I'll provide a shot list), description, keywords, category, age rating, support URL.
+- [x] **[me]** **Privacy Policy** written ([`PRIVACY.md`](PRIVACY.md)) — **[you]** host it at a URL.
+- [x] **[me]** **Account deletion** in Settings (server-side delete endpoint + UI).
+- [x] **[me]** **Launch screen** (branded background) and **app icon**.
+- [x] **[me]** **Export-compliance** flag (`ITSAppUsesNonExemptEncryption = false`).
+- [x] **[me]** Accessibility labels on the main icon buttons (more polish ongoing).
+- [x] **[me]** **App Privacy answers + listing copy + screenshot shot list** ([`STORE_LISTING.md`](STORE_LISTING.md)).
+- [ ] **[you]** Enter the **App Privacy answers** in App Store Connect (from STORE_LISTING.md).
+- [ ] **[you]** Host the privacy policy; paste the URL into App Store Connect.
+- [ ] **[you]** Screenshots, description, keywords, category, age rating, support URL (copy in STORE_LISTING.md).
 
 ## Phase 4 — Submit
 
