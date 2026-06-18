@@ -18,6 +18,9 @@ final class PlaidService {
     var isBusy = false
     var statusMessage: String?
     var lastError: String?
+    /// Set when a premium action is blocked; the Money view reacts by prompting.
+    var requiresSignIn = false
+    var requiresSubscription = false
 
     /// Set while a hosted link session is awaiting completion in the browser.
     var pendingLinkToken: String? {
@@ -43,8 +46,11 @@ final class PlaidService {
     @MainActor
     func startLinkFlow(context: ModelContext) async {
         lastError = nil
+        requiresSignIn = false
+        requiresSubscription = false
+        guard BackendService.shared.isSignedIn else { requiresSignIn = true; return }
         do {
-            let response = try await post("/api/create_link_token", body: [:])
+            let response = try await post("/api/plaid/create_link_token", body: [:])
             guard let linkToken = response["link_token"] as? String,
                   let urlString = response["hosted_link_url"] as? String,
                   let url = URL(string: urlString) else {
@@ -53,6 +59,12 @@ final class PlaidService {
             pendingLinkToken = linkToken
             statusMessage = "Finish linking your bank in the browser, then come back here."
             await UIApplication.shared.open(url)
+        } catch let error as BackendService.BackendError {
+            switch error {
+            case .subscriptionRequired: requiresSubscription = true
+            case .notSignedIn: requiresSignIn = true
+            case .server(let message): lastError = message
+            }
         } catch {
             lastError = error.localizedDescription
         }
@@ -64,7 +76,7 @@ final class PlaidService {
     func completePendingLinkIfNeeded(context: ModelContext) async {
         guard let token = pendingLinkToken, !isBusy else { return }
         do {
-            let response = try await post("/api/complete_hosted_link", body: ["link_token": token])
+            let response = try await post("/api/plaid/complete_hosted_link", body: ["link_token": token])
             if (response["linked"] as? Bool) == true {
                 pendingLinkToken = nil
                 statusMessage = "Bank linked. Fetching data…"
@@ -97,7 +109,7 @@ final class PlaidService {
 
     @MainActor
     private func syncAccounts(context: ModelContext) async throws {
-        let response = try await get("/api/accounts")
+        let response = try await get("/api/plaid/accounts")
         let items = response["accounts"] as? [[String: Any]] ?? []
         let existing = try context.fetch(FetchDescriptor<FinancialAccount>(
             predicate: #Predicate { $0.plaidAccountID != nil }))
@@ -123,7 +135,7 @@ final class PlaidService {
 
     @MainActor
     private func syncTransactions(context: ModelContext) async throws {
-        let response = try await get("/api/transactions")
+        let response = try await get("/api/plaid/transactions")
         let items = response["transactions"] as? [[String: Any]] ?? []
         let existing = try context.fetch(FetchDescriptor<MoneyTransaction>(
             predicate: #Predicate { $0.plaidTransactionID != nil }))
@@ -145,7 +157,7 @@ final class PlaidService {
 
     @MainActor
     private func syncSubscriptions(context: ModelContext) async throws {
-        let response = try await get("/api/recurring")
+        let response = try await get("/api/plaid/recurring")
         let items = response["subscriptions"] as? [[String: Any]] ?? []
         let existing = try context.fetch(FetchDescriptor<Subscription>(
             predicate: #Predicate { $0.plaidStreamID != nil }))
@@ -175,31 +187,13 @@ final class PlaidService {
         }
     }
 
-    // MARK: - HTTP
+    // MARK: - HTTP (through the authenticated backend)
 
     private func get(_ path: String) async throws -> [String: Any] {
-        try await request("GET", path: path, body: nil)
+        try await BackendService.shared.request("GET", path: path)
     }
 
     private func post(_ path: String, body: [String: Any]) async throws -> [String: Any] {
-        try await request("POST", path: path, body: body)
-    }
-
-    private func request(_ method: String, path: String, body: [String: Any]?) async throws -> [String: Any] {
-        guard let url = URL(string: serverURL + path) else {
-            throw PlaidError.server("invalid server URL — set it in Settings")
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        if let body {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        }
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw PlaidError.server((json["error"] as? String) ?? "request to \(path) failed")
-        }
-        return json
+        try await BackendService.shared.request("POST", path: path, body: body)
     }
 }

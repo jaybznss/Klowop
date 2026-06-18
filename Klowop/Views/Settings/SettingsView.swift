@@ -8,9 +8,11 @@ struct SettingsView: View {
     @State private var health = HealthKitService.shared
     @State private var notifications = NotificationService.shared
     @State private var backend = BackendService.shared
+    @State private var store = StoreKitService.shared
     @State private var googleError: String?
     @State private var healthError: String?
     @State private var showingDeleteConfirm = false
+    @State private var showingPaywall = false
 
     var body: some View {
         Form {
@@ -139,16 +141,6 @@ struct SettingsView: View {
             }
 
             Section {
-                TextField("Companion server URL", text: $settings.plaidServerURL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-            } header: {
-                Text("Bank linking (Plaid)")
-            } footer: {
-                Text("URL of the Klowop companion server that talks to Plaid (default http://localhost:8484 for the simulator). See SETUP.md step 4.")
-            }
-            Section {
                 LabeledContent("Version", value: appVersion)
             } footer: {
                 Text("Klowop — your life, one app.")
@@ -157,6 +149,7 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .sheet(isPresented: $showingPaywall) { PaywallView() }
         .alert("Delete account?", isPresented: $showingDeleteConfirm) {
             Button("Delete", role: .destructive) {
                 Task { try? await backend.deleteAccount() }
@@ -178,8 +171,19 @@ struct SettingsView: View {
                 if let email = backend.userEmail {
                     LabeledContent("Apple ID", value: email)
                 }
-                LabeledContent("Subscription",
-                               value: backend.subscriptionActive ? "Active" : "Free")
+                if store.isSubscribed {
+                    LabeledContent("Subscription") {
+                        Label("Klowop Pro", systemImage: "sparkles").foregroundStyle(Theme.assistant)
+                    }
+                } else {
+                    Button {
+                        showingPaywall = true
+                    } label: {
+                        Label("Upgrade to Klowop Pro", systemImage: "sparkles")
+                            .foregroundStyle(Theme.assistant)
+                    }
+                }
+                Button("Restore purchases") { Task { await store.restore() } }
                 Button("Sign out") { backend.signOut() }
                 Button("Delete account", role: .destructive) { showingDeleteConfirm = true }
             } else {

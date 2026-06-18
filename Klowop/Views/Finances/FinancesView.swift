@@ -10,6 +10,8 @@ struct FinancesView: View {
     @Query(sort: \Budget.category) private var budgets: [Budget]
     @State private var plaid = PlaidService.shared
     @State private var showingBudgetEditor = false
+    @State private var showingSignIn = false
+    @State private var showingPaywall = false
     @Environment(\.scenePhase) private var scenePhase
 
     private var netWorth: Double {
@@ -57,6 +59,40 @@ struct FinancesView: View {
                 // Returning from the browser after a hosted Plaid Link session.
                 if phase == .active {
                     Task { await plaid.completePendingLinkIfNeeded(context: context) }
+                }
+            }
+            .onChange(of: plaid.requiresSignIn) { _, needs in
+                if needs { showingSignIn = true; plaid.requiresSignIn = false }
+            }
+            .onChange(of: plaid.requiresSubscription) { _, needs in
+                if needs { showingPaywall = true; plaid.requiresSubscription = false }
+            }
+            .sheet(isPresented: $showingSignIn) { signInSheet }
+            .sheet(isPresented: $showingPaywall) { PaywallView() }
+        }
+    }
+
+    private var signInSheet: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Image(systemName: "building.columns.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(Theme.financeGradient)
+                Text("Sign in to link your bank")
+                    .font(.title2.weight(.bold))
+                Text("Bank-linking is part of Klowop Pro and needs an account.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 36)
+                AppleSignInButton { showingSignIn = false }
+                    .frame(maxWidth: 320)
+                    .padding(.horizontal, 36)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingSignIn = false }
                 }
             }
         }

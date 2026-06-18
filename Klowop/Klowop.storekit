@@ -1,0 +1,69 @@
+{
+  "identifier" : "A1B2C3D4-0000-0000-0000-000000000001",
+  "nonRenewingSubscriptions" : [],
+  "products" : [],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_applicationInternalID" : "0000000000"
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "A1B2C3D4-0000-0000-0000-000000000010",
+      "localizations" : [],
+      "name" : "Klowop Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "A1B2C3D4-0000-0000-0000-000000000011",
+          "introductoryOffer" : {
+            "internalID" : "A1B2C3D4-0000-0000-0000-000000000012",
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P1W"
+          },
+          "localizations" : [
+            {
+              "description" : "The AI assistant and automatic bank-linking.",
+              "displayName" : "Klowop Pro (Monthly)",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.jaybznss.Klowop.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Klowop Pro Monthly",
+          "subscriptionGroupID" : "A1B2C3D4-0000-0000-0000-000000000010",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "39.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "A1B2C3D4-0000-0000-0000-000000000021",
+          "localizations" : [
+            {
+              "description" : "The AI assistant and automatic bank-linking, billed yearly.",
+              "displayName" : "Klowop Pro (Yearly)",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.jaybznss.Klowop.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Klowop Pro Yearly",
+          "subscriptionGroupID" : "A1B2C3D4-0000-0000-0000-000000000010",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}
