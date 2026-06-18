@@ -62,7 +62,7 @@ enum BriefingScheduler {
     static func runNow() async {
         defer { scheduleNext() }
         guard AppSettings.shared.autoBriefingEnabled,
-              !AppSettings.shared.anthropicAPIKey.isEmpty else { return }
+              BackendService.shared.isSignedIn else { return }
         do {
             let container = try AppGroup.makeModelContainer()
             let text = try await ClaudeAssistantService.shared.oneShot(

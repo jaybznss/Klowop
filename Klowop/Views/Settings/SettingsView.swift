@@ -7,8 +7,10 @@ struct SettingsView: View {
     @State private var google = GoogleCalendarService.shared
     @State private var health = HealthKitService.shared
     @State private var notifications = NotificationService.shared
+    @State private var backend = BackendService.shared
     @State private var googleError: String?
     @State private var healthError: String?
+    @State private var showingDeleteConfirm = false
 
     var body: some View {
         Form {
@@ -17,6 +19,8 @@ struct SettingsView: View {
                 Stepper("Daily calorie goal: \(settings.dailyCalorieGoal)",
                         value: $settings.dailyCalorieGoal, in: 1000...5000, step: 50)
             }
+
+            accountSection
 
             Section {
                 if notifications.isEnabled {
@@ -62,15 +66,7 @@ struct SettingsView: View {
             } header: {
                 Text("Daily briefing")
             } footer: {
-                Text("Your secretary writes a morning summary and sends it as a notification. iOS schedules background work opportunistically, so it can arrive a little after the chosen time. Uses your API key (~1–2¢ per briefing).")
-            }
-
-            Section {
-                SecureField("Anthropic API key (sk-ant-…)", text: $settings.anthropicAPIKey)
-            } header: {
-                Text("Assistant")
-            } footer: {
-                Text("Powers the secretary chat. Create a key at console.anthropic.com — see SETUP.md step 2.")
+                Text("Your secretary writes a morning summary and sends it as a notification. iOS schedules background work opportunistically, so it can arrive a little after the chosen time. Requires being signed in.")
             }
 
             Section {
@@ -161,6 +157,41 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .alert("Delete account?", isPresented: $showingDeleteConfirm) {
+            Button("Delete", role: .destructive) {
+                Task { try? await backend.deleteAccount() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes your Klowop account and any data on our servers (bank links, subscription). Data stored only on this device is unaffected.")
+        }
+    }
+
+    @ViewBuilder
+    private var accountSection: some View {
+        Section {
+            if backend.isSignedIn {
+                LabeledContent("Account") {
+                    Label("Signed in", systemImage: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                }
+                if let email = backend.userEmail {
+                    LabeledContent("Apple ID", value: email)
+                }
+                LabeledContent("Subscription",
+                               value: backend.subscriptionActive ? "Active" : "Free")
+                Button("Sign out") { backend.signOut() }
+                Button("Delete account", role: .destructive) { showingDeleteConfirm = true }
+            } else {
+                Text("Sign in to use the assistant and link your bank accounts. Tracking, calendar, and manual entry work without an account.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                AppleSignInButton()
+                    .padding(.vertical, 4)
+            }
+        } header: {
+            Text("Account")
+        }
     }
 
     private var appVersion: String {

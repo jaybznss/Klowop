@@ -6,8 +6,8 @@ import Observation
 final class AppSettings {
     static let shared = AppSettings()
 
-    var anthropicAPIKey: String {
-        didSet { KeychainHelper.set(anthropicAPIKey, for: "anthropic_api_key") }
+    var backendURL: String {
+        didSet { UserDefaults.standard.set(backendURL, forKey: "backend_url") }
     }
     var googleClientID: String {
         didSet { UserDefaults.standard.set(googleClientID, forKey: "google_client_id") }
@@ -36,7 +36,8 @@ final class AppSettings {
     }
 
     private init() {
-        anthropicAPIKey = KeychainHelper.get("anthropic_api_key") ?? ""
+        backendURL = UserDefaults.standard.string(forKey: "backend_url")
+            ?? "https://klowop-production.up.railway.app"
         googleClientID = UserDefaults.standard.string(forKey: "google_client_id") ?? ""
         plaidServerURL = UserDefaults.standard.string(forKey: "plaid_server_url") ?? "http://localhost:8484"
         let goal = UserDefaults.standard.integer(forKey: "daily_calorie_goal")

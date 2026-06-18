@@ -7,14 +7,60 @@ struct AssistantView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \ChatMessage.date) private var messages: [ChatMessage]
     @State private var assistant = ClaudeAssistantService.shared
+    @State private var backend = BackendService.shared
     @State private var input = ""
     @State private var errorMessage: String?
     @FocusState private var inputFocused: Bool
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                ScrollViewReader { proxy in
+            Group {
+                if backend.isSignedIn {
+                    chat
+                } else {
+                    signInGate
+                }
+            }
+            .background(AuroraBackground(colors: [.indigo, Theme.assistant, .blue]))
+            .navigationTitle("Assistant")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
+                }
+                if backend.isSignedIn {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(role: .destructive) { clearChat() } label: { Image(systemName: "trash") }
+                            .disabled(messages.isEmpty)
+                    }
+                }
+            }
+        }
+    }
+
+    private var signInGate: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 44))
+                .foregroundStyle(Theme.assistantGradient)
+            Text("Meet your secretary")
+                .font(.title2.weight(.bold))
+            Text("Sign in to schedule events, manage lists, log meals, and ask about your money — just by talking.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 36)
+            AppleSignInButton()
+                .frame(maxWidth: 320)
+                .padding(.horizontal, 36)
+                .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var chat: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 10) {
                             if messages.isEmpty { welcome }
@@ -56,24 +102,11 @@ struct AssistantView: View {
                 }
                 inputBar
             }
-            .background(AuroraBackground(colors: [.indigo, Theme.assistant, .blue]))
             .animation(.snappy, value: messages.count)
             .animation(.smooth, value: assistant.isThinking)
             .sensoryFeedback(.success, trigger: messages.count) { old, new in
                 new > old && messages.last?.role == "assistant"
             }
-            .navigationTitle("Assistant")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(role: .destructive) { clearChat() } label: { Image(systemName: "trash") }
-                        .disabled(messages.isEmpty)
-                }
-            }
-        }
     }
 
     private let suggestions = [

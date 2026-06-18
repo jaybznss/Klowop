@@ -18,19 +18,17 @@ final class ClaudeAssistantService {
     /// the reply as it's written instead of waiting for the full message.
     var streamingText = ""
 
-    private let model = "claude-opus-4-8"
-    private let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
     private var conversation: [[String: Any]] = []
     private let maxToolRounds = 12
 
     enum AssistantError: LocalizedError {
-        case missingAPIKey
+        case notSignedIn
         case badResponse(String)
 
         var errorDescription: String? {
             switch self {
-            case .missingAPIKey:
-                return "Add your Anthropic API key in Settings to talk to the assistant."
+            case .notSignedIn:
+                return "Sign in to talk to your assistant."
             case .badResponse(let message):
                 return message
             }
@@ -82,8 +80,8 @@ final class ClaudeAssistantService {
     /// A chat turn: appended to the persistent conversation, streamed to the UI.
     @MainActor
     func send(_ userText: String, context: ModelContext) async throws -> String {
-        guard !AppSettings.shared.anthropicAPIKey.isEmpty else {
-            throw AssistantError.missingAPIKey
+        guard BackendService.shared.isSignedIn else {
+            throw AssistantError.notSignedIn
         }
         isThinking = true
         streamingText = ""
@@ -102,8 +100,8 @@ final class ClaudeAssistantService {
     /// own throwaway conversation — doesn't touch the chat history or the chat UI.
     @MainActor
     func oneShot(_ prompt: String, context: ModelContext) async throws -> String {
-        guard !AppSettings.shared.anthropicAPIKey.isEmpty else {
-            throw AssistantError.missingAPIKey
+        guard BackendService.shared.isSignedIn else {
+            throw AssistantError.notSignedIn
         }
         var messages: [[String: Any]] = [["role": "user", "content": prompt]]
         return try await runLoop(messages: &messages, context: context, streamToUI: false)
@@ -186,33 +184,27 @@ final class ClaudeAssistantService {
     /// are reconstructed verbatim so the tool loop can echo them back exactly.
     @MainActor
     private func requestMessage(messages: [[String: Any]], streamToUI: Bool) async throws -> [String: Any] {
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 300
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(AppSettings.shared.anthropicAPIKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-
+        // The backend holds the Anthropic key and forces the model/stream; we send
+        // the conversation, system prompt, and tools, and parse the streamed SSE.
         let body: [String: Any] = [
-            "model": model,
             "max_tokens": 16000,
-            "stream": true,
-            "thinking": ["type": "adaptive"],
             "system": systemPrompt(),
             "tools": AssistantTools.definitions,
             "messages": messages,
         ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw AssistantError.badResponse("No HTTP response.")
-        }
+        let (bytes, http) = try await BackendService.shared.assistantStream(body: body)
         guard http.statusCode == 200 else {
+            if http.statusCode == 401 { throw AssistantError.notSignedIn }
+            if http.statusCode == 402 {
+                throw AssistantError.badResponse("Your assistant needs an active Klowop subscription.")
+            }
             var errorData = Data()
             for try await byte in bytes { errorData.append(byte) }
             let json = (try? JSONSerialization.jsonObject(with: errorData)) as? [String: Any]
-            let message = (json?["error"] as? [String: Any])?["message"] as? String ?? "HTTP \(http.statusCode)"
+            let message = (json?["error"] as? String)
+                ?? (json?["error"] as? [String: Any])?["message"] as? String
+                ?? "HTTP \(http.statusCode)"
             throw AssistantError.badResponse(message)
         }
 

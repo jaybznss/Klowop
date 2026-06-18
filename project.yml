@@ -16,6 +16,8 @@ targets:
       path: Klowop/Klowop.entitlements
       properties:
         com.apple.developer.healthkit: true
+        com.apple.developer.applesignin:
+          - Default
         com.apple.security.application-groups:
           - group.com.jaybznss.klowop
     settings:
