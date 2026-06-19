@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Klowop — Privacy Policy</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6; max-width: 720px; margin: 0 auto; padding: 32px 20px 80px;
+      color: #1c1c1e; background: #f2f2f7;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #f2f2f7; background: #000; }
+      .card { background: #1c1c1e !important; }
+      th { background: #2c2c2e !important; }
+      td, th { border-color: #38383a !important; }
+      a { color: #0a84ff; }
+    }
+    h1 { font-size: 28px; margin-bottom: 4px; }
+    h2 { font-size: 20px; margin-top: 32px; }
+    h3 { font-size: 16px; margin-top: 22px; }
+    .muted { color: #8e8e93; font-size: 14px; }
+    .card { background: #fff; border-radius: 16px; padding: 18px 20px; margin: 18px 0; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 10px; border: 1px solid #e0e0e5; }
+    th { background: #ececf0; }
+    code { background: rgba(127,127,127,.18); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
+    a { color: #0066cc; }
+    ul { padding-left: 22px; }
+  </style>
+</head>
+<body>
+  <h1>Klowop Privacy Policy</h1>
+  <p class="muted">Last updated: June 15, 2026</p>
+
+  <p>Klowop (“the app,” “we,” “us”) is a personal life-management app for iPhone.
+  This policy explains what data Klowop handles, where it lives, and the choices you
+  have. We designed Klowop to keep your data on your device wherever possible.</p>
+  <p><strong>Contact:</strong> jay.bznss@gmail.com</p>
+
+  <div class="card">
+    <h2 style="margin-top:0">The short version</h2>
+    <ul>
+      <li>Most of your data — meals, events, to-dos, budgets, manually entered finances — is stored <strong>only on your iPhone</strong> (and your private iCloud, if enabled).</li>
+      <li>Some optional paid features use a server: the <strong>AI assistant</strong> and <strong>automatic bank-linking</strong>. For those, data is sent to our backend and the providers that power them.</li>
+      <li>We <strong>never sell your data</strong>, never use it for advertising, and never use Apple Health data for anything other than showing it to you in the app.</li>
+      <li>You can <strong>delete your account and all server-side data</strong> any time in Settings; deleting the app removes on-device data.</li>
+    </ul>
+  </div>
+
+  <h2>What we collect and why</h2>
+
+  <h3>Stored on your device only</h3>
+  <p>Meals and nutrition, calendar events you create, to-do lists, budgets, manually
+  entered accounts and transactions, subscriptions, and your assistant chat history
+  are stored locally using Apple’s SwiftData. We do not receive or store this on our servers.</p>
+
+  <h3>Apple Health (HealthKit) — read and write, on device</h3>
+  <p>If you connect Apple Health, Klowop <strong>reads</strong> activity (active energy,
+  steps, exercise minutes) and body composition (weight, body fat, lean mass) to display
+  alongside your food log, and <strong>writes</strong> the meals you log back to Health.
+  This data is used solely to provide app features, is processed on your device, and is
+  <strong>never transmitted to our servers, sold, shared, or used for advertising</strong>,
+  in accordance with Apple’s HealthKit requirements. You control access in the iOS Health app at any time.</p>
+
+  <h3>Account (Sign in with Apple)</h3>
+  <p>To use paid features you sign in with Apple. We receive a stable, anonymized Apple
+  user identifier and (if you share it) your email, which we store on our backend to
+  identify your account and subscription. We do not receive your name or Apple password.</p>
+
+  <h3>AI assistant (paid feature)</h3>
+  <p>When you use the assistant, your messages and the relevant data it reads to answer
+  (e.g. today’s events or your budget totals) are sent to our backend, which forwards them
+  to <strong>Anthropic</strong> (the Claude API) to generate a response. We do not use your
+  conversations to train models. See Anthropic’s terms at anthropic.com.</p>
+
+  <h3>Automatic bank-linking (paid feature)</h3>
+  <p>If you link a bank account, the connection is handled by <strong>Plaid</strong>. Plaid
+  authenticates with your bank and returns balances, transactions, and recurring-payment
+  information to our backend, which relays it to your app. We store Plaid access tokens and
+  the returned financial data on our backend, isolated to your account. We never see or store
+  your bank login credentials — those go directly to Plaid. See plaid.com/legal.</p>
+
+  <h3>Google Calendar (optional)</h3>
+  <p>If you connect Google Calendar, the app reads and writes events using credentials that
+  stay on your device. Calendar data syncs directly between your device and Google; it does
+  not pass through our servers.</p>
+
+  <h3>Diagnostics</h3>
+  <p>Our backend keeps minimal operational logs (timestamps, error messages) to keep the
+  service running. These are not used to profile you and are not shared.</p>
+
+  <h2>Third parties we use</h2>
+  <table>
+    <tr><th>Provider</th><th>Purpose</th><th>What they receive</th></tr>
+    <tr><td>Apple</td><td>Sign in with Apple, subscriptions, HealthKit</td><td>Account identifier; purchase records</td></tr>
+    <tr><td>Anthropic</td><td>AI assistant responses</td><td>Your assistant messages and context needed to answer</td></tr>
+    <tr><td>Plaid</td><td>Bank-linking</td><td>Bank authentication (directly) and returned financial data</td></tr>
+    <tr><td>Google</td><td>Calendar sync (optional)</td><td>Calendar events (directly from your device)</td></tr>
+  </table>
+  <p>We share data with these providers only to deliver the feature you requested, and only the data needed for it.</p>
+
+  <h2>Your choices and rights</h2>
+  <ul>
+    <li><strong>Use the app without an account:</strong> tracking, calendar, and manual finance work with no sign-in.</li>
+    <li><strong>Delete your account:</strong> Settings → Account → Delete account removes your account and all server-side data.</li>
+    <li><strong>Delete on-device data:</strong> delete the app, or remove items individually.</li>
+    <li><strong>Revoke Health access:</strong> in the iOS Health app, anytime.</li>
+    <li><strong>Disconnect Google or a bank:</strong> in the app’s Settings / Money tab.</li>
+  </ul>
+  <p>Depending on where you live, you may have rights to access, correct, or delete your
+  personal data. Contact us at the email above to exercise them.</p>
+
+  <h2>Data retention &amp; security</h2>
+  <p>On-device data persists until you delete it. Server-side data persists until you delete
+  your account. We use industry-standard encryption in transit (HTTPS) and restrict access to
+  our backend. No method of transmission or storage is 100% secure, but we take reasonable
+  measures to protect your data.</p>
+
+  <h2>Children</h2>
+  <p>Klowop is not directed to children under 13 and we do not knowingly collect data from them.</p>
+
+  <h2>Changes</h2>
+  <p>We may update this policy; material changes will be reflected by the “Last updated” date above.</p>
+</body>
+</html>

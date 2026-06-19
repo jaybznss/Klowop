@@ -166,6 +166,9 @@ app.use(express.json({ limit: '4mb' }));
 
 app.get('/', (_req, res) => res.json({ ok: true, service: 'klowop-server' }));
 
+// Public privacy policy (required by App Store review + Google OAuth verification).
+app.get('/privacy', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
+
 // 1. Sign in with Apple: the app sends Apple's identity token; we verify it and
 //    return our own long-lived session token used for every other request.
 app.post('/auth/apple', async (req, res) => {
