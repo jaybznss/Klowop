@@ -61,7 +61,7 @@ standard HealthKit review question.
 > Tracking, calendar, and manual finance are free. Klowop Pro unlocks the AI
 > assistant and automatic bank-linking.
 >
-> Klowop Pro is an auto-renewing subscription. [price] per month or [price] per
+> Klowop Pro is an auto-renewing subscription. $4.99 per month or $39.99 per
 > year after any free trial. Cancel anytime.
 
 **Keywords (100 chars):**
@@ -71,9 +71,9 @@ standard HealthKit review question.
 
 **Age rating:** 4+ (no objectionable content)
 
-**Support URL:** [your support page]
-**Marketing URL:** [optional]
-**Privacy Policy URL:** [where you host PRIVACY.md]
+**Support URL:** https://klowop-production.up.railway.app/support (page not built yet — add a `/support` route like `/privacy` before submission)
+**Marketing URL:** [optional — leave blank]
+**Privacy Policy URL:** https://klowop-production.up.railway.app/privacy
 
 ---
 
