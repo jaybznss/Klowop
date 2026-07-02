@@ -9,6 +9,8 @@ struct NutritionView: View {
     @State private var settings = AppSettings.shared
     @State private var health = HealthKitService.shared
     @State private var weightHistory: [HealthKitService.HistorySample] = []
+    @State private var mealToDelete: Meal?
+    @State private var favoritedTrigger = 0
     @Query(sort: \Meal.date) private var allMeals: [Meal]
 
     private var dayMeals: [Meal] {
@@ -33,6 +35,8 @@ struct NutritionView: View {
                     if health.isEnabled {
                         activityCard
                         if !health.bodyComposition.isEmpty { bodyCard }
+                    } else if HealthKitService.isAvailable {
+                        connectHealthCard
                     }
                     ForEach(mealOrder, id: \.self) { type in
                         let meals = dayMeals.filter { $0.mealType == type }
@@ -71,8 +75,57 @@ struct NutritionView: View {
                 weightHistory = await health.weightHistory()
             }
             .animation(.smooth, value: calories)
-            .sensoryFeedback(.increase, trigger: allMeals.count)
+            // Only celebrate additions — deletions shouldn't play an "increase" tick.
+            .sensoryFeedback(.increase, trigger: allMeals.count) { old, new in new > old }
+            .sensoryFeedback(.success, trigger: favoritedTrigger)
+            .confirmationDialog("Delete this meal?",
+                                isPresented: Binding(get: { mealToDelete != nil },
+                                                     set: { if !$0 { mealToDelete = nil } }),
+                                titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    if let meal = mealToDelete { delete(meal) }
+                    mealToDelete = nil
+                }
+            } message: {
+                Text("This also removes it from Apple Health.")
+            }
         }
+    }
+
+    private func delete(_ meal: Meal) {
+        if let uuid = meal.healthKitUUID {
+            Task { await HealthKitService.shared.deleteMeal(uuid: uuid) }
+        }
+        context.delete(meal)
+        try? context.save()
+    }
+
+    /// Shown when Apple Health is available but not connected — the features
+    /// shouldn't silently vanish; invite the user in.
+    private var connectHealthCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CardHeader(title: "Apple Health", symbol: "heart.text.square.fill",
+                       gradient: Theme.activityGradient)
+            Text("See your Apple Watch activity and body composition next to your food log — and mirror logged meals back into Health.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button {
+                Task {
+                    try? await health.requestAuthorization()
+                    await health.refresh(day: selectedDay)
+                    weightHistory = await health.weightHistory()
+                }
+            } label: {
+                Text("Connect Apple Health")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .tint(.pink)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
     }
 
     // MARK: - Weekly calories chart
@@ -110,6 +163,11 @@ struct NutritionView: View {
                 RuleMark(y: .value("Goal", settings.dailyCalorieGoal))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     .foregroundStyle(.secondary)
+                    .annotation(position: .top, alignment: .trailing) {
+                        Text("Goal")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
             }
             .chartXAxis {
                 AxisMarks(values: .stride(by: .day)) { _ in
@@ -160,7 +218,7 @@ struct NutritionView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .background(color.opacity(0.1), in: .rect(cornerRadius: 10, style: .continuous))
+        .background(color.opacity(0.10), in: .rect(cornerRadius: Theme.cornerRadiusSmall, style: .continuous))
     }
 
     private var bodyCard: some View {
@@ -219,19 +277,30 @@ struct NutritionView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .background(Color.cyan.opacity(0.08), in: .rect(cornerRadius: 10, style: .continuous))
+        .background(Color.cyan.opacity(0.10), in: .rect(cornerRadius: Theme.cornerRadiusSmall, style: .continuous))
     }
 
     private var dayPicker: some View {
         HStack {
-            Button { shiftDay(-1) } label: { Image(systemName: "chevron.left") }
+            Button { shiftDay(-1) } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Previous day")
             Spacer()
             Text(selectedDay.dayLabel).font(.headline)
             Spacer()
-            Button { shiftDay(1) } label: { Image(systemName: "chevron.right") }
-                .disabled(Calendar.current.isDateInToday(selectedDay))
+            Button { shiftDay(1) } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Next day")
+            .disabled(Calendar.current.isDateInToday(selectedDay))
         }
-        .padding(.top, 4)
     }
 
     private func shiftDay(_ delta: Int) {
@@ -243,7 +312,8 @@ struct NutritionView: View {
             HStack {
                 VStack(alignment: .leading) {
                     Text("\(calories)")
-                        .font(.system(size: 40, weight: .bold, design: .rounded))
+                        // Semantic style so it scales with Dynamic Type.
+                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
                         .monospacedDigit()
                         .contentTransition(.numericText(value: Double(calories)))
                     Text("of \(settings.dailyCalorieGoal) kcal")
@@ -251,15 +321,20 @@ struct NutritionView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                let percent = Int(Double(calories) / Double(max(1, settings.dailyCalorieGoal)) * 100)
                 ZStack {
                     ProgressRing(progress: Double(calories) / Double(max(1, settings.dailyCalorieGoal)),
                                  gradient: Theme.nutritionGradient, glow: .green)
-                    Text("\(Int(Double(calories) / Double(max(1, settings.dailyCalorieGoal)) * 100))%")
+                    Text("\(percent)%")
                         .font(.caption.weight(.bold))
                         .fontDesign(.rounded)
                         .monospacedDigit()
+                        // Over-goal reads amber instead of pretending it's fine.
+                        .foregroundStyle(percent > 100 ? Color.orange : Color.primary)
                 }
                 .frame(width: 64, height: 64)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(percent) percent of calorie goal")
             }
             HStack {
                 macro("Protein", protein, .red)
@@ -281,7 +356,7 @@ struct NutritionView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .background(color.opacity(0.12), in: .rect(cornerRadius: 10, style: .continuous))
+        .background(color.opacity(0.10), in: .rect(cornerRadius: Theme.cornerRadiusSmall, style: .continuous))
     }
 
     private func mealSection(type: String, meals: [Meal]) -> some View {
@@ -301,28 +376,43 @@ struct NutritionView: View {
                         .font(.subheadline)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
+                    // Visible affordance — context menus alone are undiscoverable.
+                    Menu {
+                        Button {
+                            addToFavorites(meal)
+                        } label: { Label("Add to favorites", systemImage: "star") }
+                        Button(role: .destructive) {
+                            mealToDelete = meal
+                        } label: { Label("Delete", systemImage: "trash") }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 32, height: 44)
+                            .contentShape(.rect)
+                    }
+                    .accessibilityLabel("Meal options")
                 }
-                .swipeActions { } // keep row tappable in ScrollView context
                 .contextMenu {
                     Button {
-                        context.insert(FavoriteFood(
-                            name: meal.name, brand: meal.notes, calories: meal.calories,
-                            protein: meal.protein, carbs: meal.carbs, fat: meal.fat,
-                            mealType: meal.mealType))
-                        try? context.save()
+                        addToFavorites(meal)
                     } label: { Label("Add to favorites", systemImage: "star") }
                     Button(role: .destructive) {
-                        if let uuid = meal.healthKitUUID {
-                            Task { await HealthKitService.shared.deleteMeal(uuid: uuid) }
-                        }
-                        context.delete(meal)
-                        try? context.save()
+                        mealToDelete = meal
                     } label: { Label("Delete", systemImage: "trash") }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .card()
+    }
+
+    private func addToFavorites(_ meal: Meal) {
+        context.insert(FavoriteFood(
+            name: meal.name, brand: meal.notes, calories: meal.calories,
+            protein: meal.protein, carbs: meal.carbs, fat: meal.fat,
+            mealType: meal.mealType))
+        try? context.save()
+        favoritedTrigger += 1
     }
 }
 
@@ -332,16 +422,22 @@ struct MealEditorView: View {
 
     let day: Date
     @State private var name = ""
-    @State private var mealType = "lunch"
+    // Default to the meal implied by the current time, not a hard-coded lunch.
+    @State private var mealType: String = {
+        let hour = Calendar.current.component(.hour, from: .now)
+        return hour < 11 ? "breakfast" : hour < 15 ? "lunch" : hour < 21 ? "dinner" : "snack"
+    }()
     @State private var calories = ""
     @State private var protein = ""
     @State private var carbs = ""
     @State private var fat = ""
+    @FocusState private var fieldFocused: Bool
 
     var body: some View {
         NavigationStack {
             Form {
                 TextField("What did you eat?", text: $name)
+                    .focused($fieldFocused)
                 Picker("Meal", selection: $mealType) {
                     Text("Breakfast").tag("breakfast")
                     Text("Lunch").tag("lunch")
@@ -350,16 +446,20 @@ struct MealEditorView: View {
                 }
                 Section("Nutrition") {
                     LabeledContent("Calories") {
-                        TextField("0", text: $calories).keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                        TextField("0", text: $calories).keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing).focused($fieldFocused)
                     }
                     LabeledContent("Protein (g)") {
-                        TextField("0", text: $protein).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                        TextField("0", text: $protein).keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing).focused($fieldFocused)
                     }
                     LabeledContent("Carbs (g)") {
-                        TextField("0", text: $carbs).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                        TextField("0", text: $carbs).keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing).focused($fieldFocused)
                     }
                     LabeledContent("Fat (g)") {
-                        TextField("0", text: $fat).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                        TextField("0", text: $fat).keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing).focused($fieldFocused)
                     }
                 }
             }
@@ -370,6 +470,11 @@ struct MealEditorView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || Int(calories) == nil)
+                }
+                // Number pads have no Return key — give the keyboard a Done.
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { fieldFocused = false }
                 }
             }
         }

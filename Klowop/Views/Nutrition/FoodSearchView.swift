@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import VisionKit
+import AVFoundation
 
 /// Food logging flow: search the Open Food Facts database (or scan a barcode),
 /// pick a product, set the portion, save. Manual entry remains as a fallback.
@@ -22,6 +23,7 @@ struct FoodSearchView: View {
     @State private var showingManualEntry = false
     @State private var isLookingUpBarcode = false
     @State private var loggedCount = 0
+    @State private var hasSearched = false
 
     /// Most-recent distinct meals (by name), excluding ones already favorited.
     private var recentDistinct: [Meal] {
@@ -50,7 +52,33 @@ struct FoodSearchView: View {
                     }
                 }
                 if let errorMessage {
-                    Text(errorMessage).font(.caption).foregroundStyle(.red)
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(errorMessage)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Button("Try again") { Task { await search() } }
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Theme.nutrition)
+                        }
+                    }
+                }
+                if hasSearched && !isSearching && results.isEmpty && errorMessage == nil
+                    && !query.isEmpty {
+                    // A zero-result search isn't an error — treat it as one.
+                    ContentUnavailableView {
+                        Label("No matches", systemImage: "magnifyingglass")
+                    } description: {
+                        Text("Try a simpler name — or enter it manually.")
+                    } actions: {
+                        Button("Enter manually") { showingManualEntry = true }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
+                            .tint(Theme.nutrition)
+                    }
+                    .listRowBackground(Color.clear)
                 }
                 if query.isEmpty && !isSearching {
                     if !favorites.isEmpty {
@@ -98,6 +126,15 @@ struct FoodSearchView: View {
             .onSubmit(of: .search) {
                 Task { await search() }
             }
+            // Clearing the query must clear stale results and errors, or old
+            // rows stack underneath Favorites/Recents.
+            .onChange(of: query) { _, newValue in
+                if newValue.isEmpty {
+                    results = []
+                    errorMessage = nil
+                    hasSearched = false
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -107,11 +144,12 @@ struct FoodSearchView: View {
                         Button { showingScanner = true } label: {
                             Image(systemName: "barcode.viewfinder")
                         }
+                        .accessibilityLabel("Scan barcode")
                     }
                     Button { showingManualEntry = true } label: {
                         Image(systemName: "square.and.pencil")
                     }
-                    .help("Enter manually")
+                    .accessibilityLabel("Enter manually")
                 }
             }
             .navigationDestination(item: $selectedItem) { item in
@@ -179,6 +217,7 @@ struct FoodSearchView: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
     }
 
@@ -229,8 +268,10 @@ struct FoodSearchView: View {
         defer { isSearching = false }
         do {
             results = try await FoodDatabaseService.search(trimmed)
-            if results.isEmpty { errorMessage = "No matches — try a simpler name, or enter it manually." }
+            hasSearched = true
         } catch {
+            results = []
+            hasSearched = true
             errorMessage = error.localizedDescription
         }
     }
@@ -309,7 +350,9 @@ struct PortionView: View {
             }
             Section("Portion") {
                 HStack {
-                    Slider(value: $grams, in: 5...500, step: 5)
+                    Slider(value: $grams, in: 5...1000, step: 5)
+                        .accessibilityLabel("Portion size")
+                        .accessibilityValue("\(Int(grams)) grams")
                     Text("\(Int(grams)) g")
                         .font(.subheadline.weight(.semibold))
                         .monospacedDigit()
@@ -376,6 +419,9 @@ struct PortionView: View {
                 protein: item.proteinPer100g * factor,
                 carbs: item.carbsPer100g * factor,
                 fat: item.fatPer100g * factor)
+        // Direct generator — the sheet dismisses immediately, so a
+        // state-triggered .sensoryFeedback would never fire.
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
         onDone()
     }
 }
@@ -386,18 +432,79 @@ private struct BarcodeScannerSheet: View {
     @Environment(\.dismiss) private var dismiss
     let onScan: (String) -> Void
 
+    @State private var cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+    @State private var torchOn = false
+
     var body: some View {
         NavigationStack {
-            BarcodeScannerView(onScan: onScan)
-                .ignoresSafeArea()
-                .navigationTitle("Scan a barcode")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }
+            Group {
+                switch cameraStatus {
+                case .authorized:
+                    scanner
+                case .notDetermined:
+                    ProgressView()
+                        .task {
+                            _ = await AVCaptureDevice.requestAccess(for: .video)
+                            cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+                        }
+                default:
+                    // Denied/restricted: explain instead of a silent black screen.
+                    ContentUnavailableView {
+                        Label("Camera access needed", systemImage: "camera.fill")
+                    } description: {
+                        Text("Klowop uses the camera only to read barcodes. Enable it in Settings.")
+                    } actions: {
+                        Button("Open Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .tint(Theme.nutrition)
                     }
                 }
+            }
+            .navigationTitle("Scan a barcode")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                if cameraStatus == .authorized {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            torchOn.toggle()
+                            setTorch(torchOn)
+                        } label: {
+                            Image(systemName: torchOn ? "flashlight.on.fill" : "flashlight.off.fill")
+                        }
+                        .accessibilityLabel(torchOn ? "Turn flashlight off" : "Turn flashlight on")
+                    }
+                }
+            }
+            .onDisappear { if torchOn { setTorch(false) } }
         }
+    }
+
+    private var scanner: some View {
+        BarcodeScannerView(onScan: onScan)
+            .ignoresSafeArea()
+            .overlay(alignment: .bottom) {
+                Text("Point the camera at a barcode")
+                    .font(.subheadline.weight(.medium))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: .capsule)
+                    .padding(.bottom, 32)
+            }
+    }
+
+    private func setTorch(_ on: Bool) {
+        guard let device = AVCaptureDevice.default(for: .video), device.hasTorch else { return }
+        try? device.lockForConfiguration()
+        device.torchMode = on ? .on : .off
+        device.unlockForConfiguration()
     }
 }
 
@@ -434,6 +541,8 @@ private struct BarcodeScannerView: UIViewControllerRepresentable {
             for item in addedItems {
                 if case .barcode(let barcode) = item, let payload = barcode.payloadStringValue {
                     hasFired = true
+                    // Confirm the catch — the user is mid-aim and needs to know it worked.
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
                     onScan(payload)
                     return
                 }
