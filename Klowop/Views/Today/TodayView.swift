@@ -244,7 +244,8 @@ struct TodayView: View {
             } else {
                 ForEach(todayEvents) { event in
                     HStack(alignment: .top, spacing: 12) {
-                        Text(event.startDate.formatted(date: .omitted, time: .shortened))
+                        Text(event.isAllDay ? "All-day"
+                             : event.startDate.formatted(date: .omitted, time: .shortened))
                             .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
                             .frame(minWidth: 76, alignment: .leading)

@@ -171,9 +171,12 @@ final class GoogleCalendarService: NSObject, ASWebAuthenticationPresentationCont
     }
 
     /// Best-effort removal of an event from Google when it's deleted locally.
-    func deleteRemoteEvent(id: String) async {
+    /// Must target the event's own calendar — deleting a shared-calendar event
+    /// against "primary" 404s and the event silently survives on Google.
+    func deleteRemoteEvent(id: String, calendarID: String? = nil) async {
         guard isConnected else { return }
-        _ = try? await calendarRequest("DELETE", path: "events/\(id)")
+        _ = try? await calendarRequest("DELETE", path: "events/\(id)",
+                                       calendarID: calendarID ?? "primary")
     }
 
     @MainActor
@@ -181,18 +184,34 @@ final class GoogleCalendarService: NSObject, ASWebAuthenticationPresentationCont
         let pending = try context.fetch(FetchDescriptor<CalendarEvent>(
             predicate: #Predicate { $0.needsGoogleSync }))
         for event in pending {
-            let body: [String: Any] = [
+            var body: [String: Any] = [
                 "summary": event.title,
                 "location": event.location ?? "",
                 "description": event.notes ?? "",
-                "start": ["dateTime": iso.string(from: event.startDate)],
-                "end": ["dateTime": iso.string(from: event.endDate)],
             ]
+            if event.isAllDay {
+                // All-day events use date-only fields; Google's end date is exclusive.
+                let dayFormatter = DateFormatter()
+                dayFormatter.dateFormat = "yyyy-MM-dd"
+                dayFormatter.timeZone = .current
+                let endExclusive = Calendar.current.date(
+                    byAdding: .day, value: 1,
+                    to: Calendar.current.startOfDay(for: event.endDate))!
+                body["start"] = ["date": dayFormatter.string(from: event.startDate)]
+                body["end"] = ["date": dayFormatter.string(from: endExclusive)]
+            } else {
+                body["start"] = ["dateTime": iso.string(from: event.startDate)]
+                body["end"] = ["dateTime": iso.string(from: event.endDate)]
+            }
             if let googleID = event.googleEventID {
-                _ = try await calendarRequest("PATCH", path: "events/\(googleID)", body: body)
+                // Patch against the event's own calendar, not always "primary".
+                _ = try await calendarRequest("PATCH", path: "events/\(googleID)",
+                                              calendarID: event.calendarID ?? "primary",
+                                              body: body)
             } else {
                 let created = try await calendarRequest("POST", path: "events", body: body)
                 event.googleEventID = created["id"] as? String
+                event.calendarID = "primary"
             }
             event.needsGoogleSync = false
         }
@@ -242,13 +261,18 @@ final class GoogleCalendarService: NSObject, ASWebAuthenticationPresentationCont
                       (item["status"] as? String) != "cancelled",
                       let start = parseGoogleDate(item["start"]),
                       let end = parseGoogleDate(item["end"]) else { continue }
+                let isAllDay = start.isAllDay
+                // Google's all-day end date is exclusive (next midnight); pull it
+                // back a second so the event doesn't bleed into the following day.
+                let endDate = isAllDay ? end.date.addingTimeInterval(-1) : end.date
                 let title = (item["summary"] as? String) ?? "(no title)"
                 if let existing = byGoogleID[id] {
                     // Remote wins for events we didn't change locally.
                     if !existing.needsGoogleSync {
                         existing.title = title
-                        existing.startDate = start
-                        existing.endDate = end
+                        existing.startDate = start.date
+                        existing.endDate = endDate
+                        existing.isAllDay = isAllDay
                         existing.location = item["location"] as? String
                         existing.notes = item["description"] as? String
                         existing.calendarID = calendar.id
@@ -256,7 +280,8 @@ final class GoogleCalendarService: NSObject, ASWebAuthenticationPresentationCont
                     }
                 } else {
                     context.insert(CalendarEvent(
-                        title: title, startDate: start, endDate: end,
+                        title: title, startDate: start.date, endDate: endDate,
+                        isAllDay: isAllDay,
                         location: item["location"] as? String,
                         notes: item["description"] as? String,
                         googleEventID: id, needsGoogleSync: false,
@@ -266,15 +291,16 @@ final class GoogleCalendarService: NSObject, ASWebAuthenticationPresentationCont
         }
     }
 
-    private func parseGoogleDate(_ value: Any?) -> Date? {
+    private func parseGoogleDate(_ value: Any?) -> (date: Date, isAllDay: Bool)? {
         guard let dict = value as? [String: Any] else { return nil }
-        if let dateTime = dict["dateTime"] as? String { return iso.date(from: dateTime) }
+        if let dateTime = dict["dateTime"] as? String,
+           let date = iso.date(from: dateTime) { return (date, false) }
         if let date = dict["date"] as? String {
-            // All-day event
+            // Date-only field ⇒ all-day event
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
             formatter.timeZone = .current
-            return formatter.date(from: date)
+            if let parsed = formatter.date(from: date) { return (parsed, true) }
         }
         return nil
     }

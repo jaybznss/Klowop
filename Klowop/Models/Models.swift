@@ -61,6 +61,7 @@ final class CalendarEvent {
     var title: String
     var startDate: Date
     var endDate: Date
+    var isAllDay: Bool = false    // birthdays, holidays, OOO — no time range
     var location: String?
     var notes: String?
     var googleEventID: String?
@@ -68,13 +69,14 @@ final class CalendarEvent {
     var calendarID: String?       // source Google calendar (for multi-calendar sync)
     var colorHex: String?         // that calendar's color, e.g. "#039BE5"
 
-    init(title: String, startDate: Date, endDate: Date,
+    init(title: String, startDate: Date, endDate: Date, isAllDay: Bool = false,
          location: String? = nil, notes: String? = nil,
          googleEventID: String? = nil, needsGoogleSync: Bool = true,
          calendarID: String? = nil, colorHex: String? = nil) {
         self.title = title
         self.startDate = startDate
         self.endDate = endDate
+        self.isAllDay = isAllDay
         self.location = location
         self.notes = notes
         self.googleEventID = googleEventID

@@ -23,35 +23,111 @@ struct EventChip: View {
 
     private var color: Color { Theme.color(for: event) }
 
+    private var isNow: Bool {
+        !event.isAllDay && (event.startDate...event.endDate).contains(.now)
+    }
+
+    private var timeText: String {
+        event.isAllDay
+            ? "All-day"
+            : "\(event.startDate.formatted(date: .omitted, time: .shortened)) – \(event.endDate.formatted(date: .omitted, time: .shortened))"
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 4)
             VStack(alignment: .leading, spacing: 3) {
                 Text(event.title)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(color)
-                Text("\(event.startDate.formatted(date: .omitted, time: .shortened)) – \(event.endDate.formatted(date: .omitted, time: .shortened))")
+                    // Neutral text over the tinted fill (Google-style): the color
+                    // lives in the rail, so light calendar hues stay readable.
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(1)
+                Text(timeText)
                     .font(.caption)
                     .monospacedDigit()
                     .foregroundStyle(Color.secondary)
+                    .lineLimit(1)
                 if let location = event.location, !location.isEmpty {
                     Label(location, systemImage: "mappin.and.ellipse")
                         .font(.caption2)
                         .foregroundStyle(Color.secondary)
+                        .lineLimit(1)
                 }
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
             Spacer(minLength: 0)
-            if event.googleEventID != nil {
-                Image(systemName: "g.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(color.opacity(0.5))
+            if isNow {
+                Text("Now")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(color, in: .capsule)
                     .padding(.trailing, 10)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(color.opacity(0.12), in: .rect(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(event.title), \(timeText)\(isNow ? ", happening now" : "")")
+    }
+}
+
+// MARK: - Shared connect / sync-error surfaces
+
+/// "Connect Google Calendar" banner — shown by both Schedule and Month modes.
+struct GoogleConnectBanner: View {
+    var connectError: String?
+    var onConnect: () -> Void
+
+    var body: some View {
+        Button(action: onConnect) {
+            HStack(spacing: 12) {
+                Image(systemName: "calendar.badge.plus")
+                    .font(.title3)
+                    .foregroundStyle(Color.white)
+                    .frame(width: 38, height: 38)
+                    .background(Theme.agendaGradient, in: .rect(cornerRadius: Theme.cornerRadiusSmall, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Connect Google Calendar").font(.subheadline.weight(.semibold))
+                    Text(connectError ?? "See your events here and sync both ways.")
+                        .font(.caption)
+                        .foregroundStyle(connectError == nil ? Color.secondary : Color.red)
+                        .lineLimit(2)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(12)
+            .background(.background.secondary, in: .rect(cornerRadius: Theme.cornerRadius, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Sync failure with a retry affordance — a tiny orange caption isn't enough.
+struct SyncErrorRow: View {
+    let message: String
+    var onRetry: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color.orange)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+                Button("Try again", action: onRetry)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.agenda)
+            }
+        }
     }
 }
 
@@ -62,7 +138,9 @@ struct ScheduleListView: View {
     var showConnect: Bool
     var connectError: String?
     var syncError: String?
+    var isSyncing: Bool = false
     var onConnect: () -> Void
+    var onRetrySync: () -> Void = {}
     var onSelect: (CalendarEvent) -> Void
     var onDelete: (CalendarEvent) -> Void
 
@@ -87,12 +165,11 @@ struct ScheduleListView: View {
     var body: some View {
         List {
             if showConnect {
-                connectBanner.listRowBackground(Color.clear).listRowSeparator(.hidden)
+                GoogleConnectBanner(connectError: connectError, onConnect: onConnect)
+                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
             }
             if let syncError {
-                Label(syncError, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(Color.orange)
+                SyncErrorRow(message: syncError, onRetry: onRetrySync)
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
@@ -115,10 +192,24 @@ struct ScheduleListView: View {
                 }
             }
             if ordered.isEmpty {
-                ContentUnavailableView("No upcoming events",
-                                       systemImage: "calendar.badge.plus",
-                                       description: Text("Add one with + or ask the assistant."))
+                if isSyncing {
+                    // First sync in flight — don't claim "no events" while loading.
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Syncing your calendars…")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 40)
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                } else {
+                    ContentUnavailableView("No upcoming events",
+                                           systemImage: "calendar.badge.plus",
+                                           description: Text("Add one with + or ask the assistant."))
+                        .listRowBackground(Color.clear)
+                }
             }
         }
         .listStyle(.plain)
@@ -160,47 +251,48 @@ struct ScheduleListView: View {
         .frame(width: 42)
     }
 
-    private var connectBanner: some View {
-        Button(action: onConnect) {
-            HStack(spacing: 12) {
-                Image(systemName: "calendar.badge.plus")
-                    .font(.title3)
-                    .foregroundStyle(Color.white)
-                    .frame(width: 38, height: 38)
-                    .background(Theme.agendaGradient, in: .rect(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Connect Google Calendar").font(.subheadline.weight(.semibold))
-                    Text(connectError ?? "See your events here and sync both ways.")
-                        .font(.caption)
-                        .foregroundStyle(connectError == nil ? Color.secondary : Color.red)
-                        .lineLimit(2)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(Color.secondary)
-            }
-            .padding(12)
-            .background(.background.secondary, in: .rect(cornerRadius: Theme.cornerRadius, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
 }
 
 // MARK: - Month view
 
 struct MonthCalendarView: View {
     @Binding var selectedDate: Date
+    @Binding var monthOffset: Int
     let events: [CalendarEvent]
+    var showConnect: Bool = false
+    var connectError: String?
+    var syncError: String?
+    var onConnect: () -> Void = {}
+    var onRetrySync: () -> Void = {}
     var onSelectEvent: (CalendarEvent) -> Void
 
-    @State private var monthOffset = 0
     private let cal = Calendar.current
 
+    /// Events bucketed by day — computed once per render instead of a linear
+    /// scan for every one of the grid's cells.
+    private var eventsByDay: [Date: [CalendarEvent]] {
+        Dictionary(grouping: events) { cal.startOfDay(for: $0.startDate) }
+            .mapValues { $0.sorted { $0.startDate < $1.startDate } }
+    }
+
     var body: some View {
+        let buckets = eventsByDay
         VStack(spacing: 0) {
+            if showConnect {
+                GoogleConnectBanner(connectError: connectError, onConnect: onConnect)
+                    .padding(.horizontal)
+                    .padding(.bottom, 6)
+            }
+            if let syncError {
+                SyncErrorRow(message: syncError, onRetry: onRetrySync)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.bottom, 6)
+            }
             weekdayHeader
             TabView(selection: $monthOffset) {
                 ForEach(-12...24, id: \.self) { offset in
-                    monthGrid(monthStart(offset))
+                    monthGrid(monthStart(offset), buckets: buckets)
                         .tag(offset)
                         .padding(.horizontal, 8)
                 }
@@ -208,7 +300,17 @@ struct MonthCalendarView: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
             .frame(height: 320)
             Divider()
-            dayList
+            dayList(buckets: buckets)
+        }
+        .sensoryFeedback(.selection, trigger: selectedDate)
+        // Keep the selection inside the visible month so the day list below
+        // always belongs to the page on screen.
+        .onChange(of: monthOffset) { _, _ in
+            let month = monthStart(monthOffset)
+            guard !cal.isDate(selectedDate, equalTo: month, toGranularity: .month) else { return }
+            let dayCount = cal.range(of: .day, in: .month, for: month)?.count ?? 28
+            let day = min(cal.component(.day, from: selectedDate), dayCount)
+            selectedDate = cal.date(byAdding: .day, value: day - 1, to: month) ?? month
         }
     }
 
@@ -249,21 +351,22 @@ struct MonthCalendarView: View {
         return (0..<42).map { cal.date(byAdding: .day, value: $0, to: start)! }
     }
 
-    private func monthGrid(_ monthStart: Date) -> some View {
+    private func monthGrid(_ monthStart: Date, buckets: [Date: [CalendarEvent]]) -> some View {
         let days = gridDays(monthStart)
         let month = cal.component(.month, from: monthStart)
         return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7),
                          spacing: 4) {
             ForEach(days, id: \.self) { day in
-                dayCell(day, inMonth: cal.component(.month, from: day) == month)
+                dayCell(day, inMonth: cal.component(.month, from: day) == month, buckets: buckets)
             }
         }
     }
 
-    private func dayCell(_ date: Date, inMonth: Bool) -> some View {
+    private func dayCell(_ date: Date, inMonth: Bool,
+                         buckets: [Date: [CalendarEvent]]) -> some View {
         let isToday = cal.isDateInToday(date)
         let isSelected = cal.isDate(date, inSameDayAs: selectedDate)
-        let dots = eventsOn(date).prefix(3)
+        let dayEvents = buckets[cal.startOfDay(for: date)] ?? []
         return VStack(spacing: 3) {
             ZStack {
                 if isToday {
@@ -277,7 +380,7 @@ struct MonthCalendarView: View {
             }
             .frame(height: 32)
             HStack(spacing: 3) {
-                ForEach(Array(dots.enumerated()), id: \.offset) { _, event in
+                ForEach(Array(dayEvents.prefix(3).enumerated()), id: \.offset) { _, event in
                     Circle()
                         .fill(Theme.color(for: event))
                         .frame(width: 5, height: 5)
@@ -290,15 +393,27 @@ struct MonthCalendarView: View {
         .onTapGesture {
             withAnimation(.snappy) { selectedDate = date }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(dayCellLabel(date, count: dayEvents.count))
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private func dayCellLabel(_ date: Date, count: Int) -> String {
+        let day = date.formatted(.dateTime.month(.wide).day())
+        switch count {
+        case 0: return day
+        case 1: return "\(day), 1 event"
+        default: return "\(day), \(count) events"
+        }
     }
 
     // MARK: Day list
 
-    private var dayList: some View {
-        let dayEvents = eventsOn(selectedDate)
+    private func dayList(buckets: [Date: [CalendarEvent]]) -> some View {
+        let dayEvents = buckets[cal.startOfDay(for: selectedDate)] ?? []
         return ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                Text(selectedDate.formatted(.dateTime.weekday(.wide).month().day()))
+                Text(dayListHeader)
                     .font(.headline)
                     .padding(.top, 12)
                 if dayEvents.isEmpty {
@@ -319,9 +434,11 @@ struct MonthCalendarView: View {
         }
     }
 
-    private func eventsOn(_ date: Date) -> [CalendarEvent] {
-        events
-            .filter { cal.isDate($0.startDate, inSameDayAs: date) }
-            .sorted { $0.startDate < $1.startDate }
+    /// "Today · Wednesday, July 2"-style header for the selected day.
+    private var dayListHeader: String {
+        let full = selectedDate.formatted(.dateTime.weekday(.wide).month().day())
+        if cal.isDateInToday(selectedDate) { return "Today · \(full)" }
+        if cal.isDateInTomorrow(selectedDate) { return "Tomorrow · \(full)" }
+        return full
     }
 }

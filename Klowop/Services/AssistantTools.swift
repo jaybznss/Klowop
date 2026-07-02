@@ -252,7 +252,8 @@ enum AssistantTools {
         var deleted: [String] = []
         for event in matches {
             if let googleID = event.googleEventID {
-                await GoogleCalendarService.shared.deleteRemoteEvent(id: googleID)
+                await GoogleCalendarService.shared.deleteRemoteEvent(
+                    id: googleID, calendarID: event.calendarID)
             }
             deleted.append("\(event.title) — \(event.startDate.formatted(date: .abbreviated, time: .shortened))")
             context.delete(event)
