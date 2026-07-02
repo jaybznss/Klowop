@@ -11,12 +11,18 @@ struct TodayView: View {
     @Query(sort: \MoneyTransaction.date, order: .reverse) private var transactions: [MoneyTransaction]
 
     @State private var settings = AppSettings.shared
+    @State private var backend = BackendService.shared
+    @State private var google = GoogleCalendarService.shared
+    @State private var health = HealthKitService.shared
+    @Query private var accounts: [FinancialAccount]
+    @AppStorage("setup_checklist_dismissed") private var setupDismissed = false
     @State private var newTodoTitle = ""
     @State private var completedTodoCount = 0
     @State private var briefing: String? = BriefingScheduler.cachedBriefingForToday
     @State private var briefingLoading = false
     @State private var briefingError: String?
     @State private var showAllTodos = false
+    @State private var showingSignIn = false
 
     init() {
         let start = Calendar.current.startOfDay(for: .now)
@@ -42,7 +48,10 @@ struct TodayView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     greetingHeader
-                    briefingCard
+                    if showSetupCard { setupCard }
+                    // While the setup card is pitching sign-in, don't show a
+                    // second card pitching the same thing.
+                    if backend.isSignedIn || !showSetupCard { briefingCard }
                     statRow
                     scheduleCard
                     todosCard
@@ -63,6 +72,7 @@ struct TodayView: View {
                         .accessibilityLabel("Settings")
                 }
             }
+            .sheet(isPresented: $showingSignIn) { signInSheet }
             .animation(.snappy, value: openTodos.count)
             .sensoryFeedback(.success, trigger: completedTodoCount)
             .sensoryFeedback(.impact(flexibility: .soft), trigger: openTodos.count) { old, new in
@@ -89,13 +99,135 @@ struct TodayView: View {
         }
     }
 
+    // MARK: - Setup checklist
+
+    private struct SetupStep: Identifiable {
+        let id: String
+        let title: String
+        let symbol: String
+        let done: Bool
+        let action: () -> Void
+    }
+
+    private var setupSteps: [SetupStep] {
+        var steps: [SetupStep] = [
+            SetupStep(id: "signin", title: "Sign in with Apple", symbol: "person.crop.circle",
+                      done: backend.isSignedIn) { showingSignIn = true },
+            SetupStep(id: "google", title: "Connect Google Calendar", symbol: "calendar",
+                      done: google.isConnected) {
+                Task { try? await GoogleCalendarService.shared.connect() }
+            },
+        ]
+        if HealthKitService.isAvailable {
+            steps.append(SetupStep(id: "health", title: "Connect Apple Health", symbol: "heart.fill",
+                                   done: health.isEnabled) {
+                Task { try? await HealthKitService.shared.requestAuthorization() }
+            })
+        }
+        steps.append(SetupStep(id: "bank", title: "Link a bank account", symbol: "building.columns.fill",
+                               done: !accounts.isEmpty) {
+            TabRouter.shared.selection = .money
+        })
+        return steps
+    }
+
+    private var showSetupCard: Bool {
+        !setupDismissed && setupSteps.contains { !$0.done }
+    }
+
+    /// Guides a fresh install to the connections that make the app come alive.
+    private var setupCard: some View {
+        let steps = setupSteps
+        let doneCount = steps.filter(\.done).count
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                CardHeader(title: "Make Klowop yours", symbol: "sparkles",
+                           gradient: Theme.assistantGradient)
+                Text("\(doneCount)/\(steps.count)")
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Button {
+                    withAnimation(.snappy) { setupDismissed = true }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 32, height: 32)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss setup checklist")
+            }
+            ProgressView(value: Double(doneCount), total: Double(steps.count))
+                .tint(Theme.assistant)
+            ForEach(steps) { step in
+                Button(action: step.action) {
+                    HStack(spacing: 12) {
+                        Image(systemName: step.done ? "checkmark.circle.fill" : step.symbol)
+                            .font(.subheadline)
+                            .foregroundStyle(step.done ? Color.green : Theme.assistant)
+                            .frame(width: 26)
+                        Text(step.title)
+                            .font(.subheadline.weight(step.done ? .regular : .medium))
+                            .foregroundStyle(step.done ? Color.secondary : Color.primary)
+                            .strikethrough(step.done, color: .secondary)
+                        Spacer()
+                        if !step.done {
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .disabled(step.done)
+                .accessibilityLabel("\(step.title)\(step.done ? ", done" : "")")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .heroCard(Theme.assistant)
+        .animation(.snappy, value: setupSteps.filter(\.done).count)
+    }
+
+    private var signInSheet: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 44))
+                    .foregroundStyle(Theme.assistantGradient)
+                Text("Sign in to Klowop")
+                    .font(.title2.weight(.bold))
+                Text("Unlocks your AI secretary, daily briefings, and automatic bank-linking. Tracking, calendar, and manual entry stay free without an account.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 36)
+                AppleSignInButton { showingSignIn = false }
+                    .frame(maxWidth: 320)
+                    .padding(.horizontal, 36)
+                    .padding(.top, 4)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingSignIn = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
     private var briefingCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 CardHeader(title: "Daily briefing", symbol: "sparkles", gradient: Theme.assistantGradient)
                 if briefingLoading {
                     ProgressView()
-                } else {
+                } else if backend.isSignedIn {
                     Button {
                         generateBriefing()
                     } label: {
@@ -108,7 +240,17 @@ struct TodayView: View {
                     .accessibilityLabel(briefing == nil ? "Generate briefing" : "Refresh briefing")
                 }
             }
-            if let briefingError {
+            if !backend.isSignedIn {
+                // An invitation, not a guaranteed error.
+                Text("Sign in and your secretary will read through your day — schedule, to-dos, food, and money — and brief you each morning.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Button("Sign in") { showingSignIn = true }
+                    .font(.subheadline.weight(.semibold))
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .tint(Theme.assistant)
+            } else if let briefingError {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)

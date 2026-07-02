@@ -193,9 +193,21 @@ final class ClaudeAssistantService {
             "messages": messages,
         ]
 
-        let (bytes, http) = try await BackendService.shared.assistantStream(body: body)
+        let (bytes, http): (URLSession.AsyncBytes, HTTPURLResponse)
+        do {
+            (bytes, http) = try await BackendService.shared.assistantStream(body: body)
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            throw urlError
+        } catch is URLError {
+            throw AssistantError.badResponse("Can't reach the Klowop server. Check your connection and try again.")
+        }
         guard http.statusCode == 200 else {
-            if http.statusCode == 401 { throw AssistantError.notSignedIn }
+            if http.statusCode == 401 {
+                // Session is dead server-side — reflect that locally so the UI
+                // shows sign-in flows instead of erroring forever.
+                BackendService.shared.handleUnauthorized()
+                throw AssistantError.notSignedIn
+            }
             if http.statusCode == 402 {
                 throw AssistantError.badResponse("Your assistant needs an active Klowop subscription.")
             }

@@ -25,15 +25,25 @@ final class BackendService {
     enum BackendError: LocalizedError {
         case notSignedIn
         case subscriptionRequired
+        case unreachable
         case server(String)
 
         var errorDescription: String? {
             switch self {
             case .notSignedIn: return "Please sign in to use the assistant."
             case .subscriptionRequired: return "This feature needs a Klowop subscription."
+            case .unreachable: return "Can't reach the Klowop server. Check your connection and try again."
             case .server(let message): return message
             }
         }
+    }
+
+    /// The server no longer recognizes our session (expired, or the account
+    /// was removed). Drop it locally so the UI shows sign-in states instead
+    /// of a stale "Signed in" that errors on every action.
+    @MainActor
+    func handleUnauthorized() {
+        signOut()
     }
 
     private init() {
@@ -106,13 +116,24 @@ final class BackendService {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            throw urlError
+        } catch is URLError {
+            throw BackendError.unreachable
+        }
         let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
         guard let http = response as? HTTPURLResponse else {
             throw BackendError.server("No response from the server.")
         }
         if http.statusCode == 402 { throw BackendError.subscriptionRequired }
-        if http.statusCode == 401 { throw BackendError.notSignedIn }
+        if http.statusCode == 401 {
+            await handleUnauthorized()
+            throw BackendError.notSignedIn
+        }
         guard (200..<300).contains(http.statusCode) else {
             throw BackendError.server((json["error"] as? String) ?? "Request failed (\(http.statusCode)).")
         }
