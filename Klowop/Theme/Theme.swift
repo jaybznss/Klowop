@@ -7,6 +7,9 @@ import SwiftUI
 /// backgrounds; gradients are reserved for identity moments.
 enum Theme {
     static let cornerRadius: CGFloat = 20
+    /// Radius for small inner tiles (icon chips, mini-stats) so they nest
+    /// visually inside `cornerRadius` cards.
+    static let cornerRadiusSmall: CGFloat = 10
 
     // Base accents
     static let nutrition = Color.green
@@ -71,11 +74,15 @@ struct CardStyle: ViewModifier {
 
 /// Cards gently fade and shrink as they scroll out of view.
 struct CardScrollFade: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func body(content: Content) -> some View {
-        content.scrollTransition(.interactive) { view, phase in
+        let reduceMotion = reduceMotion
+        return content.scrollTransition(.interactive) { view, phase in
             view
                 .opacity(phase.isIdentity ? 1 : 0.6)
-                .scaleEffect(phase.isIdentity ? 1 : 0.96)
+                // Honor Reduce Motion: keep the fade, drop the scale.
+                .scaleEffect(phase.isIdentity || reduceMotion ? 1 : 0.96)
         }
     }
 }
@@ -144,6 +151,7 @@ struct ProgressRing: View {
 /// without washing out content. Tinted per life-sphere.
 struct AuroraBackground: View {
     var colors: [Color]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var breathe = false
 
     var body: some View {
@@ -177,6 +185,8 @@ struct AuroraBackground: View {
         }
         .ignoresSafeArea()
         .onAppear {
+            // Honor Reduce Motion: the aurora stays as a static glow.
+            guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 9).repeatForever(autoreverses: true)) {
                 breathe = true
             }
@@ -202,8 +212,12 @@ extension View {
 // MARK: - Formatting helpers
 
 extension Double {
-    func asCurrency(_ code: String = "USD") -> String {
-        formatted(.currency(code: code).precision(.fractionLength(2)))
+    /// Formats as currency. Defaults to the user's locale currency so amounts
+    /// don't silently read as "$" for non-US users; pass an explicit code when
+    /// the data carries one (e.g. bank accounts).
+    func asCurrency(_ code: String? = nil) -> String {
+        let resolved = code ?? Locale.current.currency?.identifier ?? "USD"
+        return formatted(.currency(code: resolved).precision(.fractionLength(2)))
     }
 }
 

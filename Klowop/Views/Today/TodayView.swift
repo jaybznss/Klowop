@@ -15,6 +15,8 @@ struct TodayView: View {
     @State private var completedTodoCount = 0
     @State private var briefing: String? = BriefingScheduler.cachedBriefingForToday
     @State private var briefingLoading = false
+    @State private var briefingError: String?
+    @State private var showAllTodos = false
 
     init() {
         let start = Calendar.current.startOfDay(for: .now)
@@ -49,6 +51,11 @@ struct TodayView: View {
                 .padding(.bottom, 24)
             }
             .navigationTitle("Today")
+            .refreshable {
+                if GoogleCalendarService.shared.isConnected {
+                    await GoogleCalendarService.shared.sync(context: context)
+                }
+            }
             .background(AuroraBackground(colors: [.indigo, Theme.assistant, .blue]))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -94,10 +101,27 @@ struct TodayView: View {
                     } label: {
                         Image(systemName: briefing == nil ? "wand.and.stars" : "arrow.clockwise")
                             .foregroundStyle(Theme.assistant)
+                            .frame(width: 44, height: 44)
+                            .contentShape(.rect)
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(briefing == nil ? "Generate briefing" : "Refresh briefing")
                 }
             }
-            if let briefing {
+            if let briefingError {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(briefingError)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Button("Try again") { generateBriefing() }
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.assistant)
+                    }
+                }
+            } else if let briefing {
                 Text(LocalizedStringKey(briefing))
                     .font(.subheadline)
                     .transition(.opacity)
@@ -113,12 +137,15 @@ struct TodayView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .heroCard(Theme.assistant)
-        .glow(Theme.assistant)
+        // Only glow once there's a real briefing — an empty placeholder
+        // shouldn't be the loudest thing on screen.
+        .glow(briefing == nil ? .clear : Theme.assistant)
         .animation(.smooth, value: briefing)
     }
 
     private func generateBriefing() {
         briefingLoading = true
+        briefingError = nil
         Task { @MainActor in
             defer { briefingLoading = false }
             do {
@@ -127,23 +154,35 @@ struct TodayView: View {
                 briefing = text
                 BriefingScheduler.cache(text)
             } catch {
-                briefing = error.localizedDescription
+                briefingError = error.localizedDescription
             }
         }
     }
 
     private var statRow: some View {
         HStack(alignment: .top, spacing: 12) {
-            statTile(title: "Calories",
-                     value: "\(caloriesToday)",
-                     detail: "of \(settings.dailyCalorieGoal.formatted())",
-                     symbol: "flame.fill", color: Theme.nutrition,
-                     progress: min(1, Double(caloriesToday) / Double(max(1, settings.dailyCalorieGoal))))
-            statTile(title: "This week",
-                     value: spentThisWeek.asCurrency(),
-                     detail: "spent",
-                     symbol: "creditcard.fill", color: Theme.finance,
-                     progress: nil)
+            Button {
+                TabRouter.shared.selection = .health
+            } label: {
+                statTile(title: "Calories",
+                         value: "\(caloriesToday)",
+                         detail: "of \(settings.dailyCalorieGoal.formatted())",
+                         symbol: "flame.fill", color: Theme.nutrition,
+                         progress: min(1, Double(caloriesToday) / Double(max(1, settings.dailyCalorieGoal))))
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens Health")
+            Button {
+                TabRouter.shared.selection = .money
+            } label: {
+                statTile(title: "This week",
+                         value: spentThisWeek.asCurrency(),
+                         detail: "spent",
+                         symbol: "creditcard.fill", color: Theme.finance,
+                         progress: nil)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens Money")
         }
     }
 
@@ -155,7 +194,7 @@ struct TodayView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 24, height: 24)
-                    .background(color.gradient, in: .rect(cornerRadius: 7, style: .continuous))
+                    .background(color.gradient, in: .rect(cornerRadius: 8, style: .continuous))
                 Text(title)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -165,6 +204,7 @@ struct TodayView: View {
                 .fontDesign(.rounded)
                 .monospacedDigit()
                 .contentTransition(.numericText())
+                .animation(.snappy, value: value)
             Text(detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -172,25 +212,42 @@ struct TodayView: View {
             ProgressView(value: progress ?? 0)
                 .tint(color)
                 .opacity(progress == nil ? 0 : 1)
+                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .card()
+        .accessibilityElement(children: .combine)
     }
 
     private var scheduleCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             CardHeader(title: "Schedule", symbol: "calendar", gradient: Theme.agendaGradient)
             if todayEvents.isEmpty {
-                Text("Nothing scheduled today.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    Image(systemName: "calendar.badge.plus")
+                        .font(.title3)
+                        .foregroundStyle(Theme.agenda)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Nothing scheduled")
+                            .font(.subheadline.weight(.medium))
+                        Text("Enjoy the free time — or plan something.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Add") { TabRouter.shared.selection = .agenda }
+                        .font(.subheadline.weight(.semibold))
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .tint(Theme.agenda)
+                }
             } else {
                 ForEach(todayEvents) { event in
                     HStack(alignment: .top, spacing: 12) {
                         Text(event.startDate.formatted(date: .omitted, time: .shortened))
                             .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
-                            .frame(width: 76, alignment: .leading)
+                            .frame(minWidth: 76, alignment: .leading)
                         VStack(alignment: .leading) {
                             Text(event.title).font(.subheadline.weight(.medium))
                             if let location = event.location, !location.isEmpty {
@@ -198,6 +255,7 @@ struct TodayView: View {
                             }
                         }
                     }
+                    .accessibilityElement(children: .combine)
                 }
             }
         }
@@ -208,7 +266,17 @@ struct TodayView: View {
     private var todosCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             CardHeader(title: "To-dos", symbol: "checklist", gradient: Theme.assistantGradient)
-            ForEach(openTodos.prefix(8)) { todo in
+            if openTodos.isEmpty {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle")
+                        .foregroundStyle(Theme.assistant)
+                    Text("All clear — add your first to-do below.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            let visibleTodos = showAllTodos ? Array(openTodos) : Array(openTodos.prefix(8))
+            ForEach(visibleTodos) { todo in
                 Button {
                     withAnimation(.snappy) {
                         todo.isDone = true
@@ -229,20 +297,40 @@ struct TodayView: View {
                         }
                         Spacer()
                         if let due = todo.dueDate {
-                            Text(due.dayLabel).font(.caption).foregroundStyle(.secondary)
+                            let overdue = due < Calendar.current.startOfDay(for: .now)
+                            Text(due.dayLabel)
+                                .font(.caption)
+                                .foregroundStyle(overdue ? Color.red : Color.secondary)
                         }
                     }
+                    .accessibilityElement(children: .combine)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Marks as done")
+            }
+            if openTodos.count > 8 {
+                Button {
+                    withAnimation(.snappy) { showAllTodos.toggle() }
+                } label: {
+                    Text(showAllTodos ? "Show less" : "Show all \(openTodos.count)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.assistant)
                 }
                 .buttonStyle(.plain)
             }
             HStack {
                 TextField("Add a to-do…", text: $newTodoTitle)
                     .textFieldStyle(.plain)
+                    .submitLabel(.done)
                     .onSubmit(addTodo)
                 Button(action: addTodo) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundStyle(Theme.assistant)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add to-do")
                 .disabled(newTodoTitle.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }

@@ -21,8 +21,10 @@ struct KlowopApp: App {
         }
         .modelContainer(container)
         .onChange(of: scenePhase) { _, phase in
-            // Keep widgets and reminders in sync whenever the app leaves the foreground.
-            if phase == .background || phase == .inactive {
+            // Keep widgets and reminders in sync whenever the app leaves the
+            // foreground. Only on .background — .inactive also fires on transient
+            // interruptions (Control Center, calls) and would rerun all this work.
+            if phase == .background {
                 WidgetCenter.shared.reloadAllTimelines()
                 Task { @MainActor in
                     await NotificationService.shared.rescheduleAll(

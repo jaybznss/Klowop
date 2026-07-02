@@ -23,9 +23,7 @@ struct OnboardingView: View {
             Spacer()
             Image(systemName: "sparkles")
                 .font(.system(size: 72))
-                .foregroundStyle(
-                    LinearGradient(colors: [.indigo, .purple],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing))
+                .foregroundStyle(Theme.assistantGradient)
             Text("Welcome to Klowop")
                 .font(.largeTitle.weight(.bold))
             Text("One place for your whole life — schedule, food, money, and a secretary who actually does things.")
@@ -44,7 +42,7 @@ struct OnboardingView: View {
             Spacer()
             featureRow("calendar", Theme.agenda, "Agenda",
                        "Two-way sync with your Google Calendar.")
-            featureRow("fork.knife", Theme.nutrition, "Food",
+            featureRow("heart.fill", Theme.nutrition, "Health",
                        "Log meals; your Apple Watch and smart scale fill in the rest.")
             featureRow("creditcard.fill", Theme.finance, "Money",
                        "Bank accounts, transactions, and subscription tracking via Plaid.")
@@ -73,24 +71,33 @@ struct OnboardingView: View {
     }
 
     private var profile: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            Text("About you")
-                .font(.largeTitle.weight(.bold))
-            Text("So your secretary knows who it's working for.")
-                .font(.body)
-                .foregroundStyle(.secondary)
-            VStack(spacing: 14) {
-                TextField("Your first name", text: $settings.userName)
-                    .textFieldStyle(.roundedBorder)
-                Stepper("Daily calorie goal: \(settings.dailyCalorieGoal)",
-                        value: $settings.dailyCalorieGoal, in: 1000...5000, step: 50)
+        // ScrollView + bottom inset so the keyboard pushes the CTA up instead
+        // of covering it on smaller devices.
+        ScrollView {
+            VStack(spacing: 20) {
+                Text("About you")
+                    .font(.largeTitle.weight(.bold))
+                Text("So your secretary knows who it's working for.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                VStack(spacing: 14) {
+                    TextField("Your first name", text: $settings.userName)
+                        .textFieldStyle(.roundedBorder)
+                        .textContentType(.givenName)
+                        .submitLabel(.done)
+                    Stepper("Daily calorie goal: \(settings.dailyCalorieGoal)",
+                            value: $settings.dailyCalorieGoal, in: 1000...5000, step: 50)
+                }
+                .padding(.horizontal, 36)
             }
-            .padding(.horizontal, 36)
-            Spacer()
-            nextButton("Next")
+            .padding(.top, 100)
         }
-        .padding(.bottom, 60)
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom) {
+            nextButton("Next")
+                .padding(.bottom, 60)
+        }
     }
 
     private var permissions: some View {
