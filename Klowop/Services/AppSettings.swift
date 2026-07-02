@@ -38,7 +38,12 @@ final class AppSettings {
     private init() {
         backendURL = UserDefaults.standard.string(forKey: "backend_url")
             ?? "https://klowop-production.up.railway.app"
-        googleClientID = UserDefaults.standard.string(forKey: "google_client_id") ?? ""
+        // The iOS OAuth client ID is public by design (PKCE, no secret) — bake it
+        // in so users never have to type developer configuration.
+        let storedClientID = UserDefaults.standard.string(forKey: "google_client_id") ?? ""
+        googleClientID = storedClientID.isEmpty
+            ? "467064468765-di6kj8ltouoh029l5c2me3mfij2gr035.apps.googleusercontent.com"
+            : storedClientID
         plaidServerURL = UserDefaults.standard.string(forKey: "plaid_server_url") ?? "http://localhost:8484"
         let goal = UserDefaults.standard.integer(forKey: "daily_calorie_goal")
         dailyCalorieGoal = goal == 0 ? 2200 : goal

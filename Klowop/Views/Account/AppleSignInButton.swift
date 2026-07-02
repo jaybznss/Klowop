@@ -10,16 +10,20 @@ struct AppleSignInButton: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            SignInWithAppleButton(.signIn) { request in
-                request.requestedScopes = [.fullName, .email]
-            } onCompletion: { result in
-                handle(result)
-            }
-            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-            .frame(height: 48)
-            .disabled(isWorking)
-            .overlay {
-                if isWorking { ProgressView() }
+            if isWorking {
+                // Swap the button out entirely — a spinner floating over the
+                // Apple wordmark reads as broken.
+                ProgressView("Signing in…")
+                    .frame(height: 48)
+                    .frame(maxWidth: .infinity)
+            } else {
+                SignInWithAppleButton(.signIn) { request in
+                    request.requestedScopes = [.fullName, .email]
+                } onCompletion: { result in
+                    handle(result)
+                }
+                .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                .frame(height: 48)
             }
             if let errorMessage {
                 Text(errorMessage)

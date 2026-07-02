@@ -12,7 +12,13 @@ struct SettingsView: View {
     @State private var googleError: String?
     @State private var healthError: String?
     @State private var showingDeleteConfirm = false
+    @State private var showingSignOutConfirm = false
     @State private var showingPaywall = false
+    @State private var isDeletingAccount = false
+    @State private var deleteError: String?
+    @State private var isRestoring = false
+    @State private var restoreMessage: String?
+    @State private var showAdvanced = false
 
     var body: some View {
         Form {
@@ -98,9 +104,6 @@ struct SettingsView: View {
             }
 
             Section {
-                TextField("Google OAuth client ID", text: $settings.googleClientID)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
                 if google.isConnected {
                     LabeledContent("Status") {
                         Label("Connected", systemImage: "checkmark.circle.fill")
@@ -119,7 +122,6 @@ struct SettingsView: View {
                             catch { googleError = error.localizedDescription }
                         }
                     }
-                    .disabled(settings.googleClientID.isEmpty)
                 }
                 if let googleError {
                     Text(googleError).font(.caption).foregroundStyle(.red)
@@ -127,17 +129,7 @@ struct SettingsView: View {
             } header: {
                 Text("Google Calendar")
             } footer: {
-                Text("Two-way sync with your Google account. Setup takes ~10 minutes — see SETUP.md step 3.")
-            }
-
-            Section {
-                TextField("USDA API key (optional)", text: $settings.usdaAPIKey)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            } header: {
-                Text("Food database")
-            } footer: {
-                Text("Food search combines USDA FoodData Central with Open Food Facts. Without a key it uses USDA's shared DEMO_KEY (rate-limited) — get a free personal key in 2 minutes at fdc.nal.usda.gov/api-key-signup.")
+                Text("Two-way sync with your Google account.")
             }
 
             Section {
@@ -147,16 +139,66 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity)
                     .multilineTextAlignment(.center)
             }
+
+            // Developer configuration — hidden from the normal flow; defaults
+            // are baked in and users should never need these.
+            Section {
+                DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
+                    TextField("Google OAuth client ID", text: $settings.googleClientID)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.caption)
+                    TextField("USDA API key (optional)", text: $settings.usdaAPIKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.caption)
+                }
+            } footer: {
+                if showAdvanced {
+                    Text("Food search uses USDA's shared key unless you add a personal one (free at fdc.nal.usda.gov). Leave these as-is unless you know why you're changing them.")
+                }
+            }
         }
         .navigationTitle("Settings")
         .sheet(isPresented: $showingPaywall) { PaywallView() }
         .alert("Delete account?", isPresented: $showingDeleteConfirm) {
-            Button("Delete", role: .destructive) {
-                Task { try? await backend.deleteAccount() }
-            }
+            Button("Delete", role: .destructive) { deleteAccount() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This permanently deletes your Klowop account and any data on our servers (bank links, subscription). Data stored only on this device is unaffected.")
+        }
+        .alert("Couldn't delete account", isPresented: Binding(
+            get: { deleteError != nil },
+            set: { if !$0 { deleteError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteError ?? "")
+        }
+        .alert("Restore Purchases", isPresented: Binding(
+            get: { restoreMessage != nil },
+            set: { if !$0 { restoreMessage = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(restoreMessage ?? "")
+        }
+        .confirmationDialog("Sign out?", isPresented: $showingSignOutConfirm,
+                            titleVisibility: .visible) {
+            Button("Sign Out", role: .destructive) { backend.signOut() }
+        } message: {
+            Text("The assistant and bank-linking stop working until you sign in again.")
+        }
+    }
+
+    private func deleteAccount() {
+        isDeletingAccount = true
+        Task { @MainActor in
+            defer { isDeletingAccount = false }
+            do {
+                try await backend.deleteAccount()
+            } catch {
+                // Silence here would look like nothing happened.
+                deleteError = error.localizedDescription
+            }
         }
     }
 
@@ -183,9 +225,17 @@ struct SettingsView: View {
                             .foregroundStyle(Theme.assistant)
                     }
                 }
-                Button("Restore purchases") { Task { await store.restore() } }
-                Button("Sign out") { backend.signOut() }
-                Button("Delete account", role: .destructive) { showingDeleteConfirm = true }
+                if isRestoring {
+                    HStack { Text("Restoring…").foregroundStyle(.secondary); Spacer(); ProgressView() }
+                } else {
+                    Button("Restore purchases") { restorePurchases() }
+                }
+                Button("Sign out") { showingSignOutConfirm = true }
+                if isDeletingAccount {
+                    HStack { Text("Deleting account…").foregroundStyle(.secondary); Spacer(); ProgressView() }
+                } else {
+                    Button("Delete account", role: .destructive) { showingDeleteConfirm = true }
+                }
             } else {
                 Text("Sign in to use the assistant and link your bank accounts. Tracking, calendar, and manual entry work without an account.")
                     .font(.subheadline)
@@ -195,6 +245,17 @@ struct SettingsView: View {
             }
         } header: {
             Text("Account")
+        }
+    }
+
+    private func restorePurchases() {
+        isRestoring = true
+        Task { @MainActor in
+            await store.restore()
+            isRestoring = false
+            restoreMessage = store.isSubscribed
+                ? "Your Klowop Pro subscription is active."
+                : "No active subscription found for this Apple ID."
         }
     }
 

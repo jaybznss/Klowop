@@ -14,8 +14,20 @@ struct FinancesView: View {
     @State private var showingPaywall = false
     @Environment(\.scenePhase) private var scenePhase
 
+    /// The most common currency across linked accounts — the only one the net
+    /// balance can honestly aggregate.
+    private var netWorthCurrency: String {
+        let counts = Dictionary(grouping: accounts, by: \.currencyCode).mapValues(\.count)
+        return counts.max { $0.value < $1.value }?.key
+            ?? Locale.current.currency?.identifier ?? "USD"
+    }
+    private var hasMixedCurrencies: Bool {
+        Set(accounts.map(\.currencyCode)).count > 1
+    }
     private var netWorth: Double {
-        accounts.reduce(0) { $0 + ($1.type == "credit" ? -$1.balance : $1.balance) }
+        // Never add raw EUR to USD — sum only the primary currency.
+        accounts.filter { $0.currencyCode == netWorthCurrency }
+            .reduce(0) { $0 + ($1.type == "credit" ? -$1.balance : $1.balance) }
     }
     private var monthlySubscriptionCost: Double {
         subscriptions.reduce(0) { $0 + $1.monthlyEquivalent }
@@ -114,7 +126,9 @@ struct FinancesView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             if let error = plaid.lastError {
-                Text(error).font(.caption).foregroundStyle(.red)
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
             linkControls
         }
@@ -128,16 +142,23 @@ struct FinancesView: View {
             Text("Net balance")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Text(netWorth.asCurrency())
-                .font(.system(size: 38, weight: .bold, design: .rounded))
+            Text(netWorth.asCurrency(netWorthCurrency))
+                .font(.system(.largeTitle, design: .rounded, weight: .bold))
                 .monospacedDigit()
                 .contentTransition(.numericText(value: netWorth))
                 .animation(.smooth, value: netWorth)
+            if hasMixedCurrencies {
+                Text("Excludes accounts in other currencies.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
             if let status = plaid.statusMessage {
                 Text(status).font(.caption).foregroundStyle(.secondary)
             }
             if let error = plaid.lastError {
-                Text(error).font(.caption).foregroundStyle(.red)
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
             linkControls
         }
@@ -211,6 +232,7 @@ struct FinancesView: View {
                 }
             }
             .frame(height: 130)
+            .accessibilityLabel("Daily spending over the last 30 days")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .card()
@@ -231,8 +253,13 @@ struct FinancesView: View {
             HStack {
                 CardHeader(title: "Budgets · this month", symbol: "gauge.with.needle", gradient: Theme.budgetGradient)
                 Button { showingBudgetEditor = true } label: {
-                    Image(systemName: "plus.circle.fill").foregroundStyle(.orange)
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundStyle(.orange)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add budget")
             }
             if budgets.isEmpty {
                 Text("Set monthly limits per category — or just tell the assistant \"set a $300 restaurants budget\".")
@@ -250,16 +277,25 @@ struct FinancesView: View {
                             .font(.caption)
                             .monospacedDigit()
                             .foregroundStyle(fraction >= 1 ? .red : .secondary)
+                        // Visible affordance; long-press alone is undiscoverable.
+                        Menu {
+                            Button(role: .destructive) {
+                                context.delete(budget)
+                                try? context.save()
+                            } label: { Label("Delete budget", systemImage: "trash") }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 28, height: 28)
+                                .contentShape(.rect)
+                        }
+                        .accessibilityLabel("Budget options")
                     }
                     ProgressView(value: min(1, fraction))
                         .tint(fraction >= 1 ? .red : fraction >= 0.8 ? .orange : .green)
                 }
-                .contextMenu {
-                    Button(role: .destructive) {
-                        context.delete(budget)
-                        try? context.save()
-                    } label: { Label("Delete budget", systemImage: "trash") }
-                }
+                .accessibilityElement(children: .contain)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -302,7 +338,7 @@ struct FinancesView: View {
             SubscriptionsView()
         } label: {
             HStack {
-                CardHeader(title: "Subscriptions", symbol: "repeat", gradient: Theme.assistantGradient)
+                CardHeader(title: "Subscriptions", symbol: "repeat", gradient: Theme.financeGradient)
                 VStack(alignment: .trailing) {
                     Text(monthlySubscriptionCost.asCurrency() + "/mo")
                         .font(.subheadline.weight(.semibold))

@@ -6,6 +6,15 @@ struct PaywallView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var store = StoreKitService.shared
     @State private var selected: Product?
+    @State private var loadAttempted = false
+    @State private var isRestoring = false
+    @State private var restoreMessage: String?
+
+    private var privacyURL: URL {
+        URL(string: AppSettings.shared.backendURL + "/privacy")!
+    }
+    /// Apple's standard EULA for apps that don't ship a custom one.
+    private let termsURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
 
     private let perks: [(symbol: String, title: String, detail: String)] = [
         ("sparkles", "Your AI secretary", "Schedule, log, and ask about your life by talking."),
@@ -31,18 +40,35 @@ struct PaywallView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: { Image(systemName: "xmark") }
+                        .accessibilityLabel("Close")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Restore") { Task { await store.restore() } }
-                        .font(.subheadline)
+                    if isRestoring {
+                        ProgressView()
+                    } else {
+                        Button("Restore") { restore() }
+                            .font(.subheadline)
+                    }
                 }
             }
             .onChange(of: store.isSubscribed) { _, subscribed in
                 if subscribed { dismiss() }
             }
-            .onAppear {
-                if store.products.isEmpty { Task { await store.loadProducts() } }
-                selected = store.products.first { $0.id == StoreKitService.yearlyID } ?? store.products.first
+            .sensoryFeedback(.success, trigger: store.isSubscribed) { _, new in new }
+            .alert("Restore Purchases", isPresented: Binding(
+                get: { restoreMessage != nil },
+                set: { if !$0 { restoreMessage = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(restoreMessage ?? "")
+            }
+            .task {
+                if store.products.isEmpty { await store.loadProducts() }
+                loadAttempted = true
+                if selected == nil {
+                    selected = store.products.first { $0.id == StoreKitService.yearlyID }
+                        ?? store.products.first
+                }
             }
         }
     }
@@ -86,12 +112,48 @@ struct PaywallView: View {
     private var plans: some View {
         VStack(spacing: 10) {
             if store.products.isEmpty {
-                ProgressView().padding()
+                if loadAttempted {
+                    // Load failed or returned nothing — never strand the user
+                    // on an infinite spinner.
+                    VStack(spacing: 8) {
+                        Text("Couldn't load subscription plans.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Button("Try again") {
+                            Task {
+                                await store.loadProducts()
+                                selected = store.products.first { $0.id == StoreKitService.yearlyID }
+                                    ?? store.products.first
+                            }
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .tint(Theme.assistant)
+                    }
+                    .padding()
+                } else {
+                    ProgressView().padding()
+                }
             }
             ForEach(store.products) { product in
                 planRow(product)
             }
         }
+    }
+
+    /// The yearly plan expressed per month ("$3.33/mo") plus the saving vs
+    /// paying monthly — so the value claim is visible, not homework.
+    private func yearlyDetail(_ product: Product) -> String {
+        let perMonth = (product.price / 12).formatted(product.priceFormatStyle)
+        var text = "\(perMonth)/mo, billed yearly"
+        if let monthly = store.products.first(where: { $0.id == StoreKitService.monthlyID }),
+           monthly.price > 0 {
+            let saving = (1 - product.price / (monthly.price * 12)) * 100
+            let rounded = Int((saving as NSDecimalNumber).doubleValue.rounded())
+            if rounded > 0 { text += " · save \(rounded)%" }
+        }
+        return text
     }
 
     private func planRow(_ product: Product) -> some View {
@@ -112,8 +174,12 @@ struct PaywallView: View {
                                 .foregroundStyle(Theme.assistant)
                         }
                     }
-                    if let offer = product.subscription?.introductoryOffer {
-                        Text("\(trialText(offer)) trial")
+                    if isYearly {
+                        Text(yearlyDetail(product))
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if let offer = product.subscription?.introductoryOffer {
+                        // Disclose the post-trial price next to the trial offer.
+                        Text("\(trialText(offer)) trial, then \(product.displayPrice)/mo")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -122,7 +188,8 @@ struct PaywallView: View {
             }
             .padding(16)
             .background(
-                (isSelected ? Theme.assistant.opacity(0.12) : Color(.secondarySystemGroupedBackground)),
+                isSelected ? AnyShapeStyle(Theme.assistant.opacity(0.12))
+                           : AnyShapeStyle(.background.secondary),
                 in: .rect(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -130,6 +197,18 @@ struct PaywallView: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func restore() {
+        isRestoring = true
+        Task { @MainActor in
+            await store.restore()
+            isRestoring = false
+            restoreMessage = store.isSubscribed
+                ? "Your Klowop Pro subscription is active."
+                : "No active subscription found for this Apple ID."
+        }
     }
 
     private func trialText(_ offer: Product.SubscriptionOffer) -> String {
@@ -168,6 +247,12 @@ struct PaywallView: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
+            // App Review requires tappable Privacy Policy and Terms links on paywalls.
+            HStack(spacing: 16) {
+                Link("Privacy Policy", destination: privacyURL)
+                Link("Terms of Use", destination: termsURL)
+            }
+            .font(.caption2)
         }
     }
 }

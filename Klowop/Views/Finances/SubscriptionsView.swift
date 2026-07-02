@@ -11,61 +11,79 @@ struct SubscriptionsView: View {
 
     var body: some View {
         List {
-            Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(monthlyTotal.asCurrency())
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                    Text("per month across \(active.count) subscriptions (\((monthlyTotal * 12).asCurrency())/year)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .listRowBackground(Color.clear)
-            }
-            Section("Upcoming renewals") {
-                ForEach(active) { sub in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(sub.name).font(.subheadline.weight(.medium))
-                            Text("Renews \(sub.nextRenewal.dayLabel) · \(sub.billingCycle)")
-                                .font(.caption)
-                                .foregroundStyle(renewalSoon(sub) ? .orange : .secondary)
-                        }
-                        Spacer()
-                        Text(sub.amount.asCurrency())
-                            .font(.subheadline.weight(.semibold))
-                            .monospacedDigit()
-                    }
-                    .swipeActions {
-                        Button("Cancelled") {
-                            sub.isActive = false
-                            try? context.save()
-                        }
-                        .tint(.orange)
-                        Button(role: .destructive) {
-                            context.delete(sub)
-                            try? context.save()
-                        } label: { Label("Delete", systemImage: "trash") }
-                    }
-                }
-            }
+            // One empty state, not a "$0.00 across 0 subscriptions" header
+            // stacked on an empty section stacked on a placeholder.
             if active.isEmpty {
                 ContentUnavailableView("No subscriptions tracked",
                                        systemImage: "repeat.circle",
                                        description: Text("They're detected automatically from linked banks, or add one with +."))
+            } else {
+                Section {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(monthlyTotal.asCurrency())
+                            .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                            .monospacedDigit()
+                        Text("per month across \(active.count) subscriptions (\((monthlyTotal * 12).asCurrency())/year)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .listRowBackground(Color.clear)
+                    .accessibilityElement(children: .combine)
+                }
+                Section("Upcoming renewals") {
+                    ForEach(active) { sub in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(sub.name).font(.subheadline.weight(.medium))
+                                Text(renewalText(sub))
+                                    .font(.caption)
+                                    .foregroundStyle(renewalColor(sub))
+                            }
+                            Spacer()
+                            Text(sub.amount.asCurrency())
+                                .font(.subheadline.weight(.semibold))
+                                .monospacedDigit()
+                        }
+                        .accessibilityElement(children: .combine)
+                        .swipeActions {
+                            Button("Mark Cancelled") {
+                                sub.isActive = false
+                                try? context.save()
+                            }
+                            .tint(.orange)
+                            Button(role: .destructive) {
+                                context.delete(sub)
+                                try? context.save()
+                            } label: { Label("Delete", systemImage: "trash") }
+                        }
+                    }
+                }
             }
         }
         .navigationTitle("Subscriptions")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingEditor = true } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("Add subscription")
             }
         }
         .sheet(isPresented: $showingEditor) { SubscriptionEditorView() }
     }
 
-    private func renewalSoon(_ sub: Subscription) -> Bool {
-        sub.nextRenewal < Calendar.current.date(byAdding: .day, value: 7, to: .now)!
+    private func renewalText(_ sub: Subscription) -> String {
+        let cycle = sub.billingCycle.capitalized
+        if sub.nextRenewal < .now {
+            return "Renewal overdue · \(sub.nextRenewal.dayLabel) · \(cycle)"
+        }
+        return "Renews \(sub.nextRenewal.dayLabel) · \(cycle)"
+    }
+
+    private func renewalColor(_ sub: Subscription) -> Color {
+        if sub.nextRenewal < .now { return .red }
+        if sub.nextRenewal < Calendar.current.date(byAdding: .day, value: 7, to: .now)! {
+            return .orange
+        }
+        return .secondary
     }
 }
 
@@ -105,7 +123,8 @@ struct SubscriptionEditorView: View {
                         try? context.save()
                         dismiss()
                     }
-                    .disabled(name.isEmpty || Double(amount) == nil)
+                    // A $0 subscription is always a typo.
+                    .disabled(name.isEmpty || (Double(amount) ?? 0) <= 0)
                 }
             }
         }

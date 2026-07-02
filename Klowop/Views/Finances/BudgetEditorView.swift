@@ -8,8 +8,19 @@ struct BudgetEditorView: View {
     /// Categories seen in transactions, offered as suggestions.
     let existingCategories: [String]
 
+    @Query private var budgets: [Budget]
     @State private var category = ""
     @State private var limit = ""
+
+    private var trimmedCategory: String {
+        category.trimmingCharacters(in: .whitespaces)
+    }
+    private var isDuplicate: Bool {
+        budgets.contains { $0.category.lowercased() == trimmedCategory.lowercased() }
+    }
+    private var isValid: Bool {
+        !trimmedCategory.isEmpty && (Double(limit) ?? 0) > 0 && !isDuplicate
+    }
 
     var body: some View {
         NavigationStack {
@@ -20,6 +31,11 @@ struct BudgetEditorView: View {
                         TextField("0.00", text: $limit)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
+                    }
+                } footer: {
+                    if isDuplicate {
+                        Text("You already have a budget for \(trimmedCategory).")
+                            .foregroundStyle(.red)
                     }
                 }
                 if !existingCategories.isEmpty {
@@ -37,12 +53,14 @@ struct BudgetEditorView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        context.insert(Budget(category: category.trimmingCharacters(in: .whitespaces),
+                        context.insert(Budget(category: trimmedCategory,
                                               monthlyLimit: Double(limit) ?? 0))
                         try? context.save()
                         dismiss()
                     }
-                    .disabled(category.trimmingCharacters(in: .whitespaces).isEmpty || Double(limit) == nil)
+                    // Requires a positive limit and no duplicate category —
+                    // a $0 budget reads as permanently "over".
+                    .disabled(!isValid)
                 }
             }
         }

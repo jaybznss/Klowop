@@ -10,7 +10,19 @@ struct AssistantView: View {
     @State private var backend = BackendService.shared
     @State private var input = ""
     @State private var errorMessage: String?
+    @State private var lastFailedText: String?
+    @State private var confirmingClear = false
+    @State private var sendTask: Task<Void, Never>?
     @FocusState private var inputFocused: Bool
+
+    /// Markdown without LocalizedStringKey's format-specifier pitfalls
+    /// (`%`, `%@` in a message would get reinterpreted).
+    private func markdown(_ text: String) -> AttributedString {
+        (try? AttributedString(
+            markdown: text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(text)
+    }
 
     var body: some View {
         NavigationStack {
@@ -31,11 +43,18 @@ struct AssistantView: View {
                 }
                 if backend.isSignedIn {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button(role: .destructive) { clearChat() } label: { Image(systemName: "trash") }
+                        Button(role: .destructive) { confirmingClear = true } label: { Image(systemName: "trash") }
                             .disabled(messages.isEmpty)
                             .accessibilityLabel("Clear conversation")
                     }
                 }
+            }
+            // One tap deleting the whole conversation is data loss — confirm it.
+            .confirmationDialog("Clear this conversation?", isPresented: $confirmingClear,
+                                titleVisibility: .visible) {
+                Button("Clear Conversation", role: .destructive) { clearChat() }
+            } message: {
+                Text("This can't be undone.")
             }
         }
     }
@@ -85,14 +104,27 @@ struct AssistantView: View {
                                 }
                             }
                             if let errorMessage {
-                                Text(errorMessage)
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
-                                    .padding(.horizontal)
+                                HStack(alignment: .top, spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(.orange)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(errorMessage)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        if lastFailedText != nil {
+                                            Button("Try again") { retry() }
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(Theme.assistant)
+                                        }
+                                    }
+                                    Spacer()
+                                }
+                                .padding(.horizontal)
                             }
                         }
                         .padding(.vertical, 12)
                     }
+                    .scrollDismissesKeyboard(.interactively)
                     .onChange(of: messages.count) {
                         if let last = messages.last {
                             withAnimation { proxy.scrollTo(last.persistentModelID, anchor: .bottom) }
@@ -154,7 +186,7 @@ struct AssistantView: View {
 
     private var streamingBubble: some View {
         HStack {
-            Text(LocalizedStringKey(assistant.streamingText))
+            Text(markdown(assistant.streamingText))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(.background.secondary, in: .rect(cornerRadius: 20, style: .continuous))
@@ -165,19 +197,27 @@ struct AssistantView: View {
     }
 
     private func bubble(for message: ChatMessage) -> some View {
-        HStack {
-            if message.role == "user" { Spacer(minLength: 48) }
-            Text(LocalizedStringKey(message.text))
+        let isUser = message.role == "user"
+        return HStack {
+            if isUser { Spacer(minLength: 48) }
+            Text(markdown(message.text))
+                .textSelection(.enabled)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
-                    message.role == "user"
+                    isUser
                         ? AnyShapeStyle(Theme.assistantGradient)
                         : AnyShapeStyle(.background.secondary),
                     in: .rect(cornerRadius: 20, style: .continuous)
                 )
-                .foregroundStyle(message.role == "user" ? .white : .primary)
-            if message.role != "user" { Spacer(minLength: 48) }
+                .foregroundStyle(isUser ? .white : .primary)
+                .contextMenu {
+                    Button {
+                        UIPasteboard.general.string = message.text
+                    } label: { Label("Copy", systemImage: "doc.on.doc") }
+                }
+                .accessibilityLabel("\(isUser ? "You" : "Assistant"): \(message.text)")
+            if !isUser { Spacer(minLength: 48) }
         }
         .padding(.horizontal)
         .transition(.push(from: .bottom).combined(with: .opacity))
@@ -192,15 +232,31 @@ struct AssistantView: View {
                 .glassEffect(.regular, in: .capsule)
                 .focused($inputFocused)
                 .onSubmit(send)
-            Button(action: send) {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(width: 38, height: 38)
+            if assistant.isThinking {
+                // A way out of a long generation.
+                Button {
+                    sendTask?.cancel()
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 38, height: 38)
+                }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .tint(.secondary)
+                .accessibilityLabel("Stop generating")
+            } else {
+                Button(action: send) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 17, weight: .semibold))
+                        .frame(width: 38, height: 38)
+                }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .tint(Theme.assistant)
+                .disabled(!canSend)
+                .accessibilityLabel("Send")
             }
-            .buttonStyle(.glassProminent)
-            .buttonBorderShape(.circle)
-            .tint(Theme.assistant)
-            .disabled(!canSend)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -215,16 +271,33 @@ struct AssistantView: View {
         guard !text.isEmpty, !assistant.isThinking else { return }
         input = ""
         errorMessage = nil
+        lastFailedText = nil
         context.insert(ChatMessage(role: "user", text: text))
         try? context.save()
+        dispatch(text)
+    }
 
-        Task { @MainActor in
+    /// Resend the last failed message without retyping it.
+    private func retry() {
+        guard let text = lastFailedText, !assistant.isThinking else { return }
+        errorMessage = nil
+        lastFailedText = nil
+        dispatch(text)
+    }
+
+    private func dispatch(_ text: String) {
+        sendTask = Task { @MainActor in
             do {
                 let reply = try await assistant.send(text, context: context)
                 context.insert(ChatMessage(role: "assistant", text: reply))
                 try? context.save()
+            } catch is CancellationError {
+                // User tapped stop — nothing to surface.
+            } catch let urlError as URLError where urlError.code == .cancelled {
+                // Same, surfaced through URLSession.
             } catch {
                 errorMessage = error.localizedDescription
+                lastFailedText = text
             }
         }
     }

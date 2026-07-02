@@ -179,7 +179,9 @@ struct EventEditorView: View {
             // Moving the start past the end must drag the end along — otherwise
             // a stale earlier end survives until the picker is reopened.
             .onChange(of: startDate) { old, new in
-                if endDate < new { endDate = new.addingTimeInterval(endDate.timeIntervalSince(old) + 3600) }
+                // Preserve the event's duration when the start moves past the end.
+                let duration = max(endDate.timeIntervalSince(old), 1800)
+                if endDate < new { endDate = new.addingTimeInterval(duration) }
             }
             .confirmationDialog("Delete this event?", isPresented: $confirmingDelete,
                                 titleVisibility: .visible) {
