@@ -32,6 +32,7 @@ struct NutritionView: View {
                     dayPicker
                     summaryCard
                     weeklyCaloriesCard
+                    GymTeaserCard()
                     if health.isEnabled {
                         activityCard
                         if !health.bodyComposition.isEmpty { bodyCard }

@@ -154,6 +154,57 @@ enum AssistantTools {
                  "Get Apple Health data: today's Apple Watch activity (active calories burned, steps, exercise minutes) and the latest body composition (weight, body fat, lean mass from a smart scale). Call this when the user asks about workouts, calories burned, weight, or body composition.",
                  properties: ["date": str("Day for the activity numbers, ISO 8601. Omit for today.")],
                  required: []),
+
+            tool("create_workout",
+                 "Create (or replace, if the name already exists) a custom gym workout the user can run from the Gym section. Call this when the user asks you to design, build, or update a workout. Pick sensible sets/reps/weights for their request and level; use weight_kg 0 for bodyweight movements.",
+                 properties: [
+                    "name": str("Workout name, e.g. 'Push Day'"),
+                    "focus": ["type": "string",
+                              "enum": ["Push", "Pull", "Legs", "Upper", "Lower", "Full body", "Cardio", "Custom"],
+                              "description": "Training focus"],
+                    "exercises": [
+                        "type": "array",
+                        "description": "Exercises in order",
+                        "items": [
+                            "type": "object",
+                            "properties": [
+                                "name": str("Exercise name, e.g. 'Bench press'"),
+                                "sets": ["type": "integer", "description": "Number of sets (default 3)"],
+                                "reps": ["type": "integer", "description": "Reps per set (default 10)"],
+                                "weight_kg": ["type": "number", "description": "Working weight in kg; 0 or omitted = bodyweight"],
+                            ] as [String: Any],
+                            "required": ["name"],
+                        ] as [String: Any],
+                    ] as [String: Any],
+                 ],
+                 required: ["name", "focus", "exercises"]),
+
+            tool("list_workouts",
+                 "List the user's saved gym workouts (with exercises) and recent completed sessions. Call this before editing a workout, or when the user asks what workouts they have or how training is going.",
+                 properties: [:],
+                 required: []),
+
+            tool("log_workout_session",
+                 "Record that the user completed a workout (e.g. they say 'I did my push day this morning'). Matches a saved workout by name.",
+                 properties: [
+                    "workout_name": str("Name of the saved workout (case-insensitive match)"),
+                    "duration_minutes": ["type": "integer", "description": "How long it took (optional)"],
+                    "date": str("When, ISO 8601 with timezone offset. Omit for now."),
+                    "notes": str("Optional notes, e.g. 'new PR on bench'"),
+                 ],
+                 required: ["workout_name"]),
+
+            tool("log_gym_charge",
+                 "Record money spent on the gym: membership fee, day pass, personal training, or gear. Also appears in Money under the 'Gym' category.",
+                 properties: [
+                    "name": str("What the charge was, e.g. 'Basic-Fit monthly'"),
+                    "amount": ["type": "number", "description": "Amount in the user's currency"],
+                    "kind": ["type": "string",
+                             "enum": ["Membership", "Day pass", "Personal training", "Gear", "Other"],
+                             "description": "Kind of charge"],
+                    "date": str("When it was charged, ISO 8601. Omit for today."),
+                 ],
+                 required: ["name", "amount", "kind"]),
         ]
     }
 
@@ -197,6 +248,10 @@ enum AssistantTools {
             case "set_budget": return try setBudget(input, context)
             case "get_budget_status": return try budgetStatus(context)
             case "get_health_summary": return await healthSummary(input)
+            case "create_workout": return try createWorkout(input, context)
+            case "list_workouts": return try listWorkouts(context)
+            case "log_workout_session": return try logWorkoutSession(input, context)
+            case "log_gym_charge": return try logGymCharge(input, context)
             default: return "Error: unknown tool \(name)"
             }
         } catch {
@@ -510,5 +565,111 @@ enum AssistantTools {
         let monthlyTotal = subs.reduce(0.0) { $0 + $1.monthlyEquivalent }
         out += "\nSubscriptions cost ≈ \(monthlyTotal.asCurrency()) per month."
         return out
+    }
+
+    // MARK: - Gym
+
+    @MainActor
+    private static func createWorkout(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        guard let name = (input["name"] as? String)?.trimmingCharacters(in: .whitespaces), !name.isEmpty,
+              let exerciseList = input["exercises"] as? [[String: Any]], !exerciseList.isEmpty else {
+            return "Error: name and a non-empty exercises array are required."
+        }
+        let focus = (input["focus"] as? String) ?? "Custom"
+
+        // Same name = replace, so "remake my push day" updates in place.
+        let existing = try context.fetch(FetchDescriptor<WorkoutTemplate>())
+            .first { $0.name.lowercased() == name.lowercased() }
+        let template: WorkoutTemplate
+        var verb = "Created"
+        if let existing {
+            verb = "Updated"
+            template = existing
+            template.focus = focus
+            for exercise in template.exercises { context.delete(exercise) }
+            template.exercises = []
+        } else {
+            template = WorkoutTemplate(name: name, focus: focus)
+            context.insert(template)
+        }
+        for (index, item) in exerciseList.enumerated() {
+            guard let exerciseName = (item["name"] as? String)?.trimmingCharacters(in: .whitespaces),
+                  !exerciseName.isEmpty else { continue }
+            let exercise = WorkoutExercise(
+                name: exerciseName,
+                sets: intValue(item["sets"]) ?? 3,
+                reps: intValue(item["reps"]) ?? 10,
+                weightKg: doubleValue(item["weight_kg"]) ?? 0,
+                orderIndex: index)
+            exercise.template = template
+            context.insert(exercise)
+        }
+        try context.save()
+        let lines = template.orderedExercises.map { "- \($0.name): \($0.detailText)" }.joined(separator: "\n")
+        return "\(verb) workout '\(name)' (\(focus)) with \(template.exercises.count) exercises:\n\(lines)\nIt's ready in Health → Gym → My workouts."
+    }
+
+    @MainActor
+    private static func listWorkouts(_ context: ModelContext) throws -> String {
+        let templates = try context.fetch(FetchDescriptor<WorkoutTemplate>(
+            sortBy: [SortDescriptor(\.createdAt)]))
+        var sessionsDescriptor = FetchDescriptor<WorkoutSession>(
+            sortBy: [SortDescriptor(\.date, order: .reverse)])
+        sessionsDescriptor.fetchLimit = 10
+        let sessions = try context.fetch(sessionsDescriptor)
+
+        if templates.isEmpty && sessions.isEmpty {
+            return "No workouts saved yet. Offer to create one with create_workout."
+        }
+        var out = "Saved workouts:\n"
+        out += templates.isEmpty ? "  (none)\n" : templates.map { template in
+            let last = template.lastPerformed.map { " — last performed \($0.formatted(date: .abbreviated, time: .omitted))" } ?? ""
+            let exercises = template.orderedExercises.map { "    - \($0.name): \($0.detailText)" }.joined(separator: "\n")
+            return "  \(template.name) (\(template.focus))\(last)\n\(exercises)"
+        }.joined(separator: "\n") + "\n"
+        out += "Recent sessions:\n"
+        out += sessions.isEmpty ? "  (none)" : sessions.map {
+            "  - \($0.date.formatted(date: .abbreviated, time: .omitted)): \($0.templateName), \($0.durationMinutes) min, \($0.exercisesCompleted)/\($0.exercisesTotal) exercises"
+        }.joined(separator: "\n")
+        return out
+    }
+
+    @MainActor
+    private static func logWorkoutSession(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        guard let query = (input["workout_name"] as? String)?.lowercased(), !query.isEmpty else {
+            return "Error: workout_name is required."
+        }
+        let templates = try context.fetch(FetchDescriptor<WorkoutTemplate>())
+        guard let template = templates.first(where: { $0.name.lowercased().contains(query) }) else {
+            let names = templates.map(\.name).joined(separator: ", ")
+            return "No saved workout matching '\(query)'. Saved workouts: \(names.isEmpty ? "(none)" : names)."
+        }
+        let date = parseDate(input["date"]) ?? .now
+        let session = WorkoutSession(
+            templateName: template.name, focus: template.focus, date: date,
+            durationMinutes: intValue(input["duration_minutes"]) ?? 0,
+            exercisesCompleted: template.exercises.count,
+            exercisesTotal: template.exercises.count,
+            notes: input["notes"] as? String)
+        context.insert(session)
+        template.lastPerformed = date
+        try context.save()
+        return "Logged a '\(template.name)' session on \(date.formatted(date: .abbreviated, time: .shortened))."
+    }
+
+    @MainActor
+    private static func logGymCharge(_ input: [String: Any], _ context: ModelContext) throws -> String {
+        guard let name = (input["name"] as? String)?.trimmingCharacters(in: .whitespaces), !name.isEmpty,
+              let amount = doubleValue(input["amount"]), amount > 0 else {
+            return "Error: name and a positive amount are required."
+        }
+        let kind = (input["kind"] as? String) ?? "Other"
+        let date = parseDate(input["date"]) ?? .now
+        context.insert(GymCharge(name: name, amount: amount, kind: kind, date: date))
+        // Mirror into Money so budgets and spending summaries include it.
+        context.insert(MoneyTransaction(merchant: name, amount: amount, date: date,
+                                        category: "Gym", accountName: "Manual"))
+        try context.save()
+        return "Logged \(amount.asCurrency()) gym charge '\(name)' (\(kind)) on \(date.formatted(date: .abbreviated, time: .omitted)). It also appears in Money under the Gym category."
     }
 }

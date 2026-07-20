@@ -16,6 +16,7 @@ enum Theme {
     static let agenda = Color.blue
     static let finance = Color.indigo
     static let assistant = Color.purple
+    static let gym = Color.orange
 
     // Signature gradients
     static let nutritionGradient = LinearGradient(
@@ -32,6 +33,8 @@ enum Theme {
         colors: [.cyan, .teal], startPoint: .topLeading, endPoint: .bottomTrailing)
     static let budgetGradient = LinearGradient(
         colors: [.orange, .yellow], startPoint: .topLeading, endPoint: .bottomTrailing)
+    static let gymGradient = LinearGradient(
+        colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
 
     /// Stable per-event color (a hash that survives relaunches, unlike hashValue).
     static let eventPalette: [Color] = [.blue, .indigo, .teal, .green, .orange, .pink, .purple, .red]

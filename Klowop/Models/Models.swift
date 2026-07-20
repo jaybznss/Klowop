@@ -8,7 +8,8 @@ enum AppGroup {
     static var schema: Schema {
         Schema([Meal.self, CalendarEvent.self, TodoItem.self, FinancialAccount.self,
                 MoneyTransaction.self, Subscription.self, Budget.self, FavoriteFood.self,
-                ChatMessage.self])
+                ChatMessage.self, WorkoutTemplate.self, WorkoutExercise.self,
+                WorkoutSession.self, GymCharge.self])
     }
 
     static func makeModelContainer() throws -> ModelContainer {
@@ -227,6 +228,103 @@ final class ChatMessage {
     init(role: String, text: String, date: Date = .now) {
         self.role = role
         self.text = text
+        self.date = date
+    }
+}
+
+// MARK: - Gym
+
+/// A reusable workout the user (or the assistant) designed — "Push Day",
+/// "Legs", "Full body quick". Performing it logs a WorkoutSession.
+@Model
+final class WorkoutTemplate {
+    var name: String
+    var focus: String            // Push, Pull, Legs, Full body, Cardio, Custom…
+    var createdAt: Date
+    var lastPerformed: Date?
+    @Relationship(deleteRule: .cascade, inverse: \WorkoutExercise.template)
+    var exercises: [WorkoutExercise]
+
+    init(name: String, focus: String = "Custom", createdAt: Date = .now,
+         lastPerformed: Date? = nil, exercises: [WorkoutExercise] = []) {
+        self.name = name
+        self.focus = focus
+        self.createdAt = createdAt
+        self.lastPerformed = lastPerformed
+        self.exercises = exercises
+    }
+
+    var orderedExercises: [WorkoutExercise] {
+        exercises.sorted { $0.orderIndex < $1.orderIndex }
+    }
+}
+
+@Model
+final class WorkoutExercise {
+    var name: String
+    var sets: Int
+    var reps: Int
+    var weightKg: Double         // 0 = bodyweight
+    var orderIndex: Int
+    var template: WorkoutTemplate?
+
+    init(name: String, sets: Int = 3, reps: Int = 10, weightKg: Double = 0,
+         orderIndex: Int = 0) {
+        self.name = name
+        self.sets = sets
+        self.reps = reps
+        self.weightKg = weightKg
+        self.orderIndex = orderIndex
+    }
+
+    /// "3×10 · 60 kg" / "3×12 · bodyweight"
+    var detailText: String {
+        let load = weightKg > 0
+            ? Measurement(value: weightKg, unit: UnitMass.kilograms)
+                .formatted(.measurement(width: .abbreviated, usage: .asProvided))
+            : "bodyweight"
+        return "\(sets)×\(reps) · \(load)"
+    }
+}
+
+/// A completed workout — what was performed and for how long.
+@Model
+final class WorkoutSession {
+    var templateName: String
+    var focus: String
+    var date: Date
+    var durationMinutes: Int
+    var exercisesCompleted: Int
+    var exercisesTotal: Int
+    var notes: String?
+
+    init(templateName: String, focus: String = "Custom", date: Date = .now,
+         durationMinutes: Int = 0, exercisesCompleted: Int = 0,
+         exercisesTotal: Int = 0, notes: String? = nil) {
+        self.templateName = templateName
+        self.focus = focus
+        self.date = date
+        self.durationMinutes = durationMinutes
+        self.exercisesCompleted = exercisesCompleted
+        self.exercisesTotal = exercisesTotal
+        self.notes = notes
+    }
+}
+
+/// Money spent on the gym: membership, day passes, personal training, gear.
+/// Mirrored into MoneyTransaction (category "Gym") so budgets and spending
+/// summaries see it too.
+@Model
+final class GymCharge {
+    var name: String
+    var amount: Double
+    var kind: String             // Membership, Day pass, Personal training, Gear, Other
+    var date: Date
+
+    init(name: String, amount: Double, kind: String = "Other", date: Date = .now) {
+        self.name = name
+        self.amount = amount
+        self.kind = kind
         self.date = date
     }
 }
